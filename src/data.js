@@ -14,7 +14,7 @@ const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = URL && KEY ? createClient(URL, KEY) : null
 export const MODO_DEMO = !supabase
 
-const TABELA = { plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
+const TABELA = { estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
 
 export const hoje = () => {
   const d = new Date()
@@ -58,7 +58,10 @@ function cadastroDemo() {
     ['p3', 'Ração crescimento 40% PB 1,2 mm', 'racao', 'kg'], ['p4', 'Ureia', 'fertilizante', 'kg'],
     ['p5', 'Superfosfato triplo', 'fertilizante', 'kg'], ['p6', 'Calcário dolomítico', 'calcario', 'kg'],
     ['p7', 'Cal hidratada', 'calcario', 'kg'], ['p8', 'Probiótico', 'probiotico', 'L'], ['p9', 'Melaço', 'outro', 'L'],
-  ].map(([id, nome, categoria, unidade]) => ({ id: `demo-${id}`, nome, categoria, unidade }))
+  ].map(([id, nome, categoria, unidade]) => ({ id: `demo-${id}`, nome, categoria, unidade, ativo: true,
+    ...{ p1: { saldo: 2400, estoque_minimo: 1500 }, p2: { saldo: 850 }, p3: { saldo: 120, estoque_minimo: 100 },
+      p4: { saldo: 300 }, p5: { saldo: 0 }, p6: { saldo: 1000 }, p7: { saldo: 40, estoque_minimo: 100 },
+      p8: { saldo: 20 }, p9: { saldo: 0 } }[id] }))
   // plano de exemplo: ~3% da biomassa para os maiores, ração inicial para os novos
   const kgDia = { V01: 84, V02: 6, V03: 48, V04: 50, V05: 68, V06: 76, V07: 6, V08: 120 }
   const planos = ciclos.map((c, i) => {
@@ -68,7 +71,7 @@ function cadastroDemo() {
     return { id: `demo-pl${i}`, ciclo_id: c.id, data_inicio: diasAtras(1), kg_dia: kg, tratos,
       produto_id: novo ? 'demo-p3' : 'demo-p1', lancado_por: 'Gestor (exemplo)' }
   })
-  return { viveiros, ciclos, biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
+  return { versao: 2, carregado_em: new Date().toISOString(), viveiros, ciclos, biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
     parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] } }
 }
 
@@ -76,11 +79,12 @@ function cadastroDemo() {
 export async function carregarCadastro() {
   let cad = await get('cadastro')
   if (MODO_DEMO) {
-    if (!cad || !cad.produtos) { cad = cadastroDemo(); await set('cadastro', cad) }
+    if (!cad || cad.versao !== 2) { cad = cadastroDemo(); await set('cadastro', cad) }
     return cad
   }
   if (navigator.onLine) {
     try {
+      const carregado_em = new Date().toISOString() // saldo do servidor vale até aqui
       const desde = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10)
       const { data: sess } = await supabase.auth.getSession()
       const uid = sess.session?.user?.id
@@ -91,7 +95,7 @@ export async function carregarCadastro() {
         supabase.from('vw_ciclo_resumo').select('ciclo_id, ultimo_peso_g, ultima_biometria').eq('status', 'em_cultivo'),
         // colocações recentes (de qualquer aparelho) e se já têm retirada
         supabase.from('bandeja_colocacoes').select('id, ciclo_id, data, hora, kg_bandejas, lancado_por, bandeja_retiradas(id, data, hora, sobra_kg, resultado, lancado_por)').gte('data', desde),
-        supabase.from('produtos').select('id, nome, categoria, unidade').eq('ativo', true).order('nome'),
+        supabase.from('vw_estoque_saldo').select('id, nome, categoria, unidade, estoque_minimo, saldo').eq('ativo', true).order('nome'),
         supabase.from('planos_racao').select('*').order('data_inicio', { ascending: false }).order('criado_em', { ascending: false }).limit(300),
         uid ? supabase.from('perfis').select('perfil').eq('user_id', uid).maybeSingle() : Promise.resolve({ data: null }),
         // biometrias por tamanho (só distribuição / uniformidade)
@@ -102,10 +106,11 @@ export async function carregarCadastro() {
       const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] }
       ;(cfg.data || []).forEach((r) => (config[r.chave] = r.valor))
       cad = {
+        carregado_em,
         viveiros: v.data, ciclos: c.data, config,
         biometrias: (b.data || []).filter((r) => r.ultimo_peso_g)
           .map((r) => ({ ciclo_id: r.ciclo_id, data: r.ultima_biometria, peso_medio_g: Number(r.ultimo_peso_g) })),
-        produtos: prod.data || [],
+        produtos: (prod.data || []).map((p) => ({ ...p, saldo: Number(p.saldo), estoque_minimo: p.estoque_minimo == null ? null : Number(p.estoque_minimo) })),
         distribuicoes: (bc.data || []).map((r) => ({ ...r, hora: String(r.hora).slice(0, 5) })),
         planos: (pl.data || []).map((r) => ({ ...r, kg_dia: Number(r.kg_dia) })),
         perfil: pf.data?.perfil || 'campo',
@@ -152,8 +157,9 @@ export async function sincronizar() {
     for (const item of fila) {
       if (MODO_DEMO) { await new Promise((r) => setTimeout(r, 120)) }
       else {
-        const { error } = await supabase.from(TABELA[item.tipo])
-          .upsert({ id: item.id, ...item.dados }, { onConflict: 'id' })
+        const dados = { id: item.id, ...item.dados }
+        if (item.tipo === 'produto') delete dados.lancado_por
+        const { error } = await supabase.from(TABELA[item.tipo]).upsert(dados, { onConflict: 'id' })
         if (error) { erro = error.message; break }
       }
       item.sincronizado = true; item.enviado_em = new Date().toISOString(); enviados++

@@ -45,6 +45,15 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - **Água**: OD, pH, temperatura, salinidade, transparência (configurável). Alertas: OD<3, pH fora 7–9,5, T>33 °C.
 - **Ocorrência**: mortalidade (quantidade), doença, manutenção, outro.
 - **Insumos**: fertilizantes, calcário/cal, probióticos, outros — produto, quantidade (unidade do cadastro).
+- **Estoque** (decidido em 24/11/2026: fica **neste sistema**; a API do Apresenta.me não tem estoque/produtos):
+  - Saldo = entradas + ajustes − saídas (view `vw_estoque_saldo`). Saídas automáticas: trato (`racao.kg`),
+    colocação de bandeja (`kg_bandejas`, a sobra é descartada) e aplicação de insumo.
+  - Gestor lança **Entrada** (em kg ou sacos × kg/saco, NF/fornecedor), **Contagem** (grava ajuste = contado − sistema)
+    e cadastra **Produto** (nome, tipo, unidade, estoque mínimo). Campo só vê o saldo.
+  - Nas telas de ração/insumo aparecem só produtos com saldo (o escolhido e o previsto sempre aparecem;
+    botão "Mostrar N sem estoque"). Lançar acima do saldo **avisa** (não bloqueia) — a nota pode não ter sido lançada ainda.
+  - No celular: saldo do servidor (até `cad.carregado_em`) + lançamentos do aparelho não enviados ou enviados depois.
+  - Tela de saldo mostra "~N dias" de cada ração pela soma dos planos de ração vigentes que a usam.
 - **Plano de ração (gestor)**: por viveiro — kg/dia (total do viveiro, **incluindo** a ração das bandejas — confirmado),
   ração, nº de tratos, divisão por trato (igual ou manual), "vale a partir de", recado ao arraçoador.
   Atalhos −10/−5/+5/+10%. Vale até o próximo plano. O arraçoador vê previsto / colocado / falta.
@@ -54,10 +63,11 @@ Cartão por viveiro: dias de cultivo, peso (biometria peso total), uniformidade 
 status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, alerta ">90 dias".
 
 ## Banco (supabase/schema.sql)
-viveiros, ciclos, produtos, perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
+viveiros, ciclos, produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
+perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 view vw_ciclo_resumo (ração lanço/bandejas/colocada/consumida, último peso só de biometria simples).
-Produtos de exemplo no seed são inventados — substituir pela lista real.
+Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e estoque: todos leem, só gestor grava (RLS).
 
 ## Achados da análise do Meu Pescado (úteis para o painel e para a migração)
 - Lançamentos errados distorciam custo dos lotes: **retroescavadeira R$ 279.990 + frete R$ 16.500** lançados como
@@ -73,8 +83,7 @@ Produtos de exemplo no seed são inventados — substituir pela lista real.
 ## Pendências / perguntas em aberto
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
-- **Rações e insumos devem vir do cadastro de estoque**, mostrando o que há em estoque. A API do Apresenta.me
-  (consultada em 24/11/2026) não tem módulo de estoque/produtos — definir de onde vem o estoque.
+- Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
 
 ## Próximos passos sugeridos
 1. Painel do escritório: FCA real (consumido/biomassa), sobrevivência estimada e real na despesca, curva de crescimento,
@@ -90,10 +99,11 @@ npm install
 npm run dev          # desenvolvimento (sem .env = modo demonstração)
 npm run build        # gera dist/
 ```
-Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar viveiros, ciclos, produtos, usuários e perfis →
+Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar viveiros, ciclos, usuários e perfis → no app (gestor): produtos e contagem inicial do estoque →
 Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar à tela inicial".
 
-Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3
+Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (versão anterior ao estoque)
+Repositório: https://github.com/ajsmendonca/camarao
 
 ## Convenções
 - Interface e textos em pt-BR; números com vírgula decimal; datas dd/mm/aaaa; horas 24 h.

@@ -35,7 +35,11 @@ const somaHora = (hora, min) => { const [h, m] = hora.split(':').map(Number); co
 const RESULT_CK = { zerou: 'Zerou', pouca_sobra: 'Pouca sobra', muita_sobra: 'Muita sobra' }
 const TIPOS_OC = { mortalidade: 'Mortalidade', doenca: 'Doença / sinais', manutencao: 'Manutenção', outro: 'Outro' }
 const CAT_INSUMO = { fertilizante: 'Fertilizante', calcario: 'Calcário / cal', probiotico: 'Probiótico', outro: 'Outro' }
-const TELA_NOME = { plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const CAT_PRODUTO = { racao: 'Ração', ...CAT_INSUMO }
+const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
+// quantidade de estoque: sem casas quando é inteiro
+const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
+const TELA_NOME = { estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -131,18 +135,37 @@ export default function App() {
   }, [cad, lanc])
 
   const pendentes = lanc.filter((l) => !l.sincronizado).length
-  const produtos = cad?.produtos || []
+  // saldo de estoque = saldo do servidor (até o último carregamento) + o que este aparelho lançou depois
+  const produtos = useMemo(() => {
+    if (!cad) return []
+    const ref = cad.carregado_em || ''
+    const conta = (l) => !l.sincronizado || (l.enviado_em || '') > ref
+    const base = cad.produtos || []
+    const novos = lanc.filter((l) => l.tipo === 'produto' && !base.some((p) => p.id === l.id))
+      .map((l) => ({ id: l.id, ...l.dados, saldo: 0 }))
+    const delta = {}
+    const add = (id, q) => { if (id && q) delta[id] = (delta[id] || 0) + q }
+    lanc.filter(conta).forEach(({ tipo, dados: d }) => {
+      if (tipo === 'racao') add(d.produto_id, -d.kg)
+      else if (tipo === 'colocacao') add(d.produto_id, -d.kg_bandejas)
+      else if (tipo === 'insumo') add(d.produto_id, -d.quantidade)
+      else if (tipo === 'estoque') add(d.produto_id, d.quantidade)
+    })
+    return [...base, ...novos].map((p) => ({ ...p, saldo: Math.round((Number(p.saldo || 0) + (delta[p.id] || 0)) * 100) / 100 }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [cad, lanc])
   const racoes = produtos.filter((x) => x.categoria === 'racao')
   const insumos = produtos.filter((x) => x.categoria !== 'racao')
   const gestor = cad?.perfil === 'gestor'
 
-  const salvar = async (tipo, dados, extra) => {
+  const salvar = async (tipo, dados, extra, voltar = 'inicio') => {
     if (extra) { // [{tipo, dados, id}] lançados juntos, na ordem
       for (const e of extra) await adicionarLancamento(e.tipo, e.dados, operador, e.id)
     } else await adicionarLancamento(tipo, dados, operador)
     await recarregar()
-    setTela('inicio')
-    setAviso({ tipo: 'ok', texto: `${TELA_NOME[tipo]} ${['plano', 'insumo'].includes(tipo) ? 'salvo' : 'salva'} no aparelho` + (online ? '' : ' — envia quando tiver sinal') })
+    setTela(voltar)
+    const nome = tipo === 'estoque' ? (dados.tipo === 'entrada' ? 'Entrada de estoque' : 'Ajuste de estoque') : TELA_NOME[tipo]
+    setAviso({ tipo: 'ok', texto: `${nome} ${['plano', 'insumo', 'produto', 'estoque'].includes(tipo) && dados?.tipo !== 'entrada' ? 'salvo' : 'salva'} no aparelho` + (online ? '' : ' — envia quando tiver sinal') })
     if (online) sync()
   }
 
@@ -171,6 +194,7 @@ export default function App() {
         {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
+        {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'agua' && <FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} />}
@@ -232,8 +256,9 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         <button className="acao bio" onClick={() => irPara('biometria')}><span>⚖️</span>Biometria</button>
         <button className="acao agua" onClick={() => irPara('agua')}><span>💧</span>Água</button>
         <button className="acao ocor" onClick={() => irPara('ocorrencia')}><span>⚠️</span>Ocorrência</button>
-        <button className={`acao insumo ${gestor ? '' : 'largo'}`} onClick={() => irPara('insumo')}><span>🧪</span>Insumos</button>
+        <button className="acao insumo" onClick={() => irPara('insumo')}><span>🧪</span>Insumos</button>
         {gestor && <button className="acao plano" onClick={() => irPara('plano')}><span>📋</span>Plano de ração</button>}
+        <button className={`acao estoque ${gestor ? 'largo' : ''}`} onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>
@@ -333,20 +358,31 @@ function Salvar({ pronto, alertas, onSalvar }) {
 }
 
 // ---------- Escolha de produto (ração ou insumo) ----------
-function EscolhaProduto({ rotulo, produtos, valor, onChange, sugerido }) {
+// Mostra só o que tem saldo em estoque (o escolhido e o previsto aparecem sempre).
+function EscolhaProduto({ rotulo, produtos, valor, onChange, sugerido, todos = false }) {
+  const [verTodos, setVerTodos] = useState(todos)
+  const lista = verTodos ? produtos : produtos.filter((p) => p.saldo > 0 || p.id === valor || p.id === sugerido)
+  const ocultos = produtos.length - lista.length
   return (
     <fieldset className="campo"><legend>{rotulo}</legend>
       <div className="lista-opcoes">
-        {produtos.map((p) => (
+        {lista.map((p) => (
           <button key={p.id} type="button" className={valor === p.id ? 'sel' : ''} onClick={() => onChange(p.id)}>
-            {p.nome}{sugerido === p.id && <em>previsto</em>}
+            <span className="nome-prod">{p.nome}{sugerido === p.id && <em>previsto</em>}</span>
+            <small className={`saldo ${p.saldo <= 0 ? 'zerado' : p.estoque_minimo != null && p.saldo < p.estoque_minimo ? 'baixo' : ''}`}>
+              {p.saldo <= 0 ? 'sem estoque' : `${fq(p.saldo)} ${p.unidade}`}</small>
           </button>
         ))}
-        {produtos.length === 0 && <p className="dica esq">Nenhum produto cadastrado.</p>}
+        {produtos.length === 0 && <p className="dica esq">Nenhum produto cadastrado. O gestor cadastra em Estoque › Produto.</p>}
+        {produtos.length > 0 && lista.length === 0 && <p className="dica esq">Nada em estoque. Peça ao escritório para lançar a entrada.</p>}
+        {!todos && ocultos > 0 && <button type="button" className="mais" onClick={() => setVerTodos(true)}>Mostrar {ocultos} sem estoque</button>}
       </div>
     </fieldset>
   )
 }
+// aviso (não bloqueia) quando o lançamento passa do saldo em estoque
+const alertaEstoque = (prod, qtd) => !prod || !(qtd > 0) || qtd <= prod.saldo + 0.001 ? []
+  : [`Estoque de ${prod.nome}: ${prod.saldo <= 0 ? 'zerado' : `só ${fq(prod.saldo)} ${prod.unidade}`}. Avise o escritório para lançar a entrada.`]
 const nomeProd = (produtos, id) => produtos.find((p) => p.id === id)?.nome || '—'
 
 // ---------- Ração: trato ----------
@@ -380,6 +416,7 @@ function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck }) {
     if (k < media * 0.3) alertas.push(`${fmt(k)} kg é bem abaixo da média dos tratos (${fmt(media)} kg).`)
   }
   if (k > 500) alertas.push('Valor acima de 500 kg por trato.')
+  alertas.push(...alertaEstoque(racoes.find((p) => p.id === produto), k))
   return (
     <div className="form">
       <Alternar opcoes={[['trato', 'Trato (lanço)'], ['check', 'Bandejas']]} valor="trato" onChange={(x) => x === 'check' && irCheck()} />
@@ -443,6 +480,7 @@ function FormChecagem({ viveiros, racoes, onSalvar, irTrato }) {
 
   const alertas = []
   if (modo === 'colocacao' && v.bandejaHoje && data === hoje()) alertas.push(`O ${v.codigo} já teve bandejas colocadas hoje às ${v.bandejaHoje.hora}.`)
+  if (modo === 'colocacao' || modo === 'ambas') alertas.push(...alertaEstoque(racoes.find((p) => p.id === produto), c))
   if (modo !== 'colocacao') {
     if (validoC && validoS && s > c) alertas.push(`Sobra (${fmt(s, 2)} kg) maior que o colocado (${fmt(c, 2)} kg).`)
     if (intervalo != null && intervalo < 0) alertas.push('A hora da retirada está antes da colocação.')
@@ -694,7 +732,7 @@ function FormInsumo({ viveiros, insumos, onSalvar }) {
         <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Opcional" />
       </label>
       <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
-      <Salvar pronto={v && prod && q > 0 && hora} alertas={[]}
+      <Salvar pronto={v && prod && q > 0 && hora} alertas={alertaEstoque(prod, q)}
         onSalvar={() => onSalvar('insumo', { ciclo_id: v.ciclo.id, data, hora, produto_id: produto, quantidade: q, observacao: obs.trim() || null })} />
     </div>
   )
@@ -732,6 +770,10 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
   if (kd > 0 && manual && Math.abs(somaDist - kd) > 0.05) alertas.push(`A soma dos tratos (${fmt(somaDist)} kg) é diferente do total do dia (${fmt(kd)} kg).`)
   if (atual && kd > 0 && Math.abs(kd - atual.kg_dia) / atual.kg_dia > 0.3) alertas.push(`Mudança de ${fmt(((kd - atual.kg_dia) / atual.kg_dia) * 100, 0)}% em relação ao plano atual.`)
   const ck = v?.bandejaHoje?.retirada || v?.bandejaOntem?.retirada
+  const racaoSel = racoes.find((p) => p.id === produto)
+  // quantos dias o estoque dessa ração dura com os planos atuais (este viveiro com o novo kg/dia)
+  const usoDia = viveiros.filter((x) => x.id !== vid && x.plano?.produto_id === produto).reduce((s, x) => s + x.plano.kg_dia, 0) + (kd > 0 ? kd : 0)
+  if (racaoSel && racaoSel.saldo <= 0) alertas.push(`${racaoSel.nome} está sem estoque.`)
   return (
     <div className="form">
       <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} />
@@ -769,6 +811,9 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
           {manual && <small className="info">Soma: {fmt(somaDist)} kg</small>}
         </fieldset>
         <EscolhaProduto rotulo="Ração" produtos={racoes} valor={produto} onChange={setProduto} />
+        {racaoSel && racaoSel.saldo > 0 && usoDia > 0 && (
+          <p className="dica esq">Estoque de {racaoSel.nome}: {fq(racaoSel.saldo)} kg — dá para ~{fmt(racaoSel.saldo / usoDia, 0)} dias com os planos atuais.</p>
+        )}
         <label className="campo"><span>Vale a partir de</span>
           <input type="date" value={inicio} min={hoje()} onChange={(e) => setInicio(e.target.value)} /></label>
         <label className="campo"><span>Recado para o arraçoador</span>
@@ -789,6 +834,8 @@ function Envios({ lanc, viveiros, produtos, online, onSync, onExcluir, onTrocarO
   const nomeViveiro = (cid) => viveiros.find((v) => v.ciclo?.id === cid)?.codigo || '?'
   const resumo = (l) => {
     const d = l.dados
+    if (l.tipo === 'estoque') { const pr = produtos.find((x) => x.id === d.produto_id); return `${d.tipo === 'entrada' ? 'entrada' : 'ajuste'} ${d.quantidade > 0 ? '+' : ''}${fq(d.quantidade)} ${pr?.unidade || ''}${d.documento ? ` · ${d.documento}` : ''}` }
+    if (l.tipo === 'produto') return `${CAT_PRODUTO[d.categoria]} · ${d.unidade}`
     if (l.tipo === 'racao') return `${d.trato}º trato · ${fmt(d.kg)} kg · ${nomeProd(produtos, d.produto_id)}`
     if (l.tipo === 'plano') return `${fmt(d.kg_dia)} kg/dia em ${d.tratos.length} tratos · a partir de ${dataBR(d.data_inicio)}`
     if (l.tipo === 'insumo') { const pr = produtos.find((x) => x.id === d.produto_id); return `${pr?.nome || '—'} · ${fmt(d.quantidade)} ${pr?.unidade || ''}` }
@@ -812,8 +859,9 @@ function Envios({ lanc, viveiros, produtos, online, onSync, onExcluir, onTrocarO
         {lanc.length === 0 && <li className="vazio">Nenhum lançamento ainda.</li>}
         {lanc.map((l) => (
           <li key={l.id}>
-            <span className={`ic ${l.tipo}`}>{{ plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
-            <div><b>{nomeViveiro(l.dados.ciclo_id)} · {TELA_NOME[l.tipo]}</b><small>{l.dados.data ? `${dataBR(l.dados.data)} ${l.dados.hora}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</small></div>
+            <span className={`ic ${l.tipo}`}>{{ estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
+            <div><b>{l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
+              <small>{l.dados.data ? `${dataBR(l.dados.data)}${l.dados.hora ? ` ${l.dados.hora}` : ''}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</small></div>
             {l.sincronizado ? <em className="ok">✓</em>
               : <button className="excluir" onClick={() => onExcluir(l.id)} aria-label="Excluir">Excluir</button>}
           </li>
@@ -826,4 +874,141 @@ function Envios({ lanc, viveiros, produtos, online, onSync, onExcluir, onTrocarO
       </div>
     </div>
   )
+}
+
+// ---------- Estoque: saldo (todos) · entrada, contagem e produto (gestor) ----------
+function TelaEstoque({ produtos, viveiros, gestor, onSalvar }) {
+  const [aba, setAba] = useState('saldo')
+  const salvar = async (tipo, dados) => { await onSalvar(tipo, dados, null, 'estoque'); setAba('saldo') }
+  const abas = [['saldo', 'Saldo'], ...(gestor ? [['entrada', 'Entrada'], ['ajuste', 'Contagem'], ['produto', 'Produto']] : [])]
+  return (
+    <div className="form">
+      {abas.length > 1 && <Alternar opcoes={abas} valor={aba} onChange={setAba} />}
+      {aba === 'saldo' && <SaldoEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} />}
+      {aba === 'entrada' && <FormEntrada key="e" produtos={produtos} onSalvar={salvar} />}
+      {aba === 'ajuste' && <FormAjuste key="a" produtos={produtos} onSalvar={salvar} />}
+      {aba === 'produto' && <FormProduto produtos={produtos} onSalvar={(d) => salvar('produto', d)} />}
+    </div>
+  )
+}
+
+function SaldoEstoque({ produtos, viveiros, gestor }) {
+  // consumo previsto por dia de cada ração = soma dos planos vigentes que a usam
+  const usoDia = {}
+  viveiros.forEach((v) => { if (v.plano?.produto_id) usoDia[v.plano.produto_id] = (usoDia[v.plano.produto_id] || 0) + v.plano.kg_dia })
+  const grupos = Object.entries(CAT_PRODUTO).map(([c, nome]) => [nome, produtos.filter((p) => p.categoria === c)]).filter(([, l]) => l.length)
+  if (!produtos.length) return <p className="dica">Nenhum produto cadastrado.{gestor ? ' Cadastre em “Produto”.' : ' O gestor cadastra os produtos.'}</p>
+  return (<>
+    {grupos.map(([nome, lista]) => (
+      <section key={nome}>
+        <h2 className="secao">{nome}</h2>
+        <ul className="estoque">
+          {lista.map((p) => {
+            const baixo = p.estoque_minimo != null && p.saldo < p.estoque_minimo
+            const dias = usoDia[p.id] && p.saldo > 0 ? p.saldo / usoDia[p.id] : null
+            return (
+              <li key={p.id} className={p.saldo <= 0 ? 'zerado' : baixo ? 'baixo' : ''}>
+                <div><b>{p.nome}</b>
+                  <small>{p.saldo <= 0 ? 'Sem estoque' : baixo ? `Abaixo do mínimo (${fq(p.estoque_minimo)} ${p.unidade})` : dias != null ? `~${fmt(dias, 0)} dias pelo plano de ração` : p.estoque_minimo != null ? `Mínimo ${fq(p.estoque_minimo)} ${p.unidade}` : ' '}
+                    {(p.saldo <= 0 || baixo) && dias != null ? ` · ~${fmt(dias, 0)} dias pelo plano` : ''}</small></div>
+                <strong>{fq(p.saldo)} <em>{p.unidade}</em></strong>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+    ))}
+    <p className="dica">O consumo sai sozinho do estoque a cada trato, bandeja colocada e insumo aplicado. Entradas e contagens são lançadas pelo gestor.</p>
+  </>)
+}
+
+function FormEntrada({ produtos, onSalvar }) {
+  const [produto, setProduto] = useState(null)
+  const [data, setData] = useState(hoje())
+  const [modo, setModo] = useState('kg')       // kg direto ou em sacos
+  const [qtd, setQtd] = useState('')
+  const [kgSaco, setKgSaco] = useState('25')
+  const [doc, setDoc] = useState('')
+  const [obs, setObs] = useState('')
+  const prod = produtos.find((p) => p.id === produto)
+  const emSacos = prod?.unidade === 'kg' && modo === 'sacos'
+  const q = emSacos ? (num(qtd) || 0) * (num(kgSaco) || 0) : num(qtd)
+  const alertas = []
+  if (prod && prod.unidade === 'kg' && q > 50000) alertas.push(`${fq(q)} kg é uma entrada muito grande — confira.`)
+  return (<>
+    <EscolhaProduto rotulo="Produto recebido" produtos={produtos} valor={produto} onChange={setProduto} todos />
+    {prod && (<>
+      {prod.unidade === 'kg' && <Alternar opcoes={[['kg', 'Em kg'], ['sacos', 'Em sacos']]} valor={modo} onChange={setModo} />}
+      {emSacos ? (
+        <div className="duas">
+          <CampoNum rotulo="Sacos" valor={qtd} onChange={setQtd} sufixo="sc" grande />
+          <CampoNum rotulo="kg por saco" valor={kgSaco} onChange={setKgSaco} sufixo="kg" grande />
+        </div>
+      ) : <CampoNum rotulo="Quantidade recebida" valor={qtd} onChange={setQtd} sufixo={prod.unidade} grande />}
+      <div className="resultado"><span>Saldo depois da entrada</span><b>{fq(prod.saldo + (q > 0 ? q : 0))} {prod.unidade}</b>
+        {emSacos && q > 0 && <small>{fq(q)} kg recebidos</small>}</div>
+      <label className="campo"><span>Data do recebimento</span>
+        <input type="date" value={data} max={hoje()} onChange={(e) => setData(e.target.value)} /></label>
+      <label className="campo"><span>Nota fiscal / fornecedor</span>
+        <input value={doc} onChange={(e) => setDoc(e.target.value)} placeholder="Opcional" /></label>
+      <label className="campo"><span>Observação</span>
+        <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Opcional" /></label>
+    </>)}
+    <Salvar pronto={prod && q > 0 && data} alertas={alertas}
+      onSalvar={() => onSalvar('estoque', { produto_id: produto, data, tipo: 'entrada', quantidade: Math.round(q * 100) / 100, documento: doc.trim() || null, observacao: obs.trim() || null })} />
+  </>)
+}
+
+function FormAjuste({ produtos, onSalvar }) {
+  const [produto, setProduto] = useState(null)
+  const [contado, setContado] = useState('')
+  const [obs, setObs] = useState('')
+  const prod = produtos.find((p) => p.id === produto)
+  const c = num(contado)
+  const dif = prod && c != null && !Number.isNaN(c) && c >= 0 ? Math.round((c - prod.saldo) * 100) / 100 : null
+  const alertas = []
+  if (dif && prod.saldo > 0 && Math.abs(dif) / prod.saldo > 0.2) alertas.push(`Diferença de ${fmt((dif / prod.saldo) * 100, 0)}% em relação ao sistema — confira a contagem.`)
+  return (<>
+    <p className="dica esq">Conte o que há no depósito e lance aqui. O sistema acerta o saldo pela diferença.</p>
+    <EscolhaProduto rotulo="Produto contado" produtos={produtos} valor={produto} onChange={setProduto} todos />
+    {prod && (<>
+      <CampoNum rotulo="Quantidade contada no depósito" valor={contado} onChange={setContado} sufixo={prod.unidade} grande />
+      <div className="resultado"><span>No sistema</span><b>{fq(prod.saldo)} {prod.unidade}</b>
+        {dif != null && <small>{dif === 0 ? 'Contagem bate com o sistema.' : `Ajuste de ${dif > 0 ? '+' : ''}${fq(dif)} ${prod.unidade}`}</small>}</div>
+      <label className="campo"><span>Motivo / observação</span>
+        <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: inventário do mês, saco rasgado" /></label>
+    </>)}
+    <Salvar pronto={prod && dif != null && dif !== 0} alertas={alertas}
+      onSalvar={() => onSalvar('estoque', { produto_id: produto, data: hoje(), tipo: 'ajuste', quantidade: dif,
+        observacao: [`Contagem: ${fq(c)} ${prod.unidade}`, obs.trim()].filter(Boolean).join(' · ') })} />
+  </>)
+}
+
+function FormProduto({ produtos, onSalvar }) {
+  const [nome, setNome] = useState('')
+  const [cat, setCat] = useState('racao')
+  const [unid, setUnid] = useState('kg')
+  const [minimo, setMinimo] = useState('')
+  const n = nome.trim().replace(/\s+/g, ' ')
+  const repetido = produtos.some((p) => p.nome.toLowerCase() === n.toLowerCase())
+  const m = num(minimo)
+  return (<>
+    <label className="campo"><span>Nome do produto</span>
+      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Ração 35% PB 2,0 mm" /></label>
+    {repetido && <p className="dica esq aviso-sem-plano">Já existe um produto com esse nome.</p>}
+    <fieldset className="campo"><legend>Tipo</legend>
+      <div className="chips cols2">
+        {Object.entries(CAT_PRODUTO).map(([k, r]) => <button key={k} type="button" className={cat === k ? 'sel' : ''} onClick={() => { setCat(k); if (k === 'racao') setUnid('kg') }}>{r}</button>)}
+      </div>
+    </fieldset>
+    <fieldset className="campo"><legend>Unidade</legend>
+      <div className="chips">
+        {UNIDADES.map((u) => <button key={u} type="button" className={unid === u ? 'sel' : ''} onClick={() => setUnid(u)}>{u}</button>)}
+      </div>
+    </fieldset>
+    <CampoNum rotulo="Estoque mínimo (avisa abaixo disso)" valor={minimo} onChange={setMinimo} sufixo={unid} />
+    <p className="dica esq">Depois de cadastrar, lance o saldo inicial em “Contagem” ou a nota em “Entrada”.</p>
+    <Salvar pronto={n.length >= 2 && !repetido && !Number.isNaN(m)} alertas={[]}
+      onSalvar={() => onSalvar({ nome: n, categoria: cat, unidade: unid, estoque_minimo: m > 0 ? m : null })} />
+  </>)
 }

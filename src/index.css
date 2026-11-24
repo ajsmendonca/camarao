@@ -188,3 +188,22 @@ main { padding: 14px; }
 
 .linha b.cv-boa{color:var(--ok)}.linha b.cv-ruim{color:var(--camarao)}.linha b small{font-weight:500;color:var(--cinza);font-size:11px}
 .linha span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* v7: estoque */
+.acao.estoque { background: #e8f0ec; border-color: #c4d8cc; color: #1f4d33; }
+.lista-opcoes .nome-prod { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.lista-opcoes .saldo { flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--ok); white-space: nowrap; }
+.lista-opcoes .saldo.baixo { color: var(--alerta); }
+.lista-opcoes .saldo.zerado { color: var(--erro); }
+.lista-opcoes button.sel .saldo { color: #fff; }
+.estoque { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.estoque li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+  border-radius: 12px; background: var(--branco); border: 1px solid var(--linha); border-left: 5px solid var(--ok); }
+.estoque li.baixo { border-left-color: var(--alerta); }
+.estoque li.zerado { border-left-color: var(--erro); }
+.estoque li div { display: flex; flex-direction: column; min-width: 0; }
+.estoque li small { color: var(--cinza); font-size: 13px; }
+.estoque li.baixo small { color: #7a5a00; } .estoque li.zerado small { color: var(--erro); }
+.estoque strong { font-size: 20px; color: var(--mar); white-space: nowrap; }
+.estoque strong em { font-style: normal; font-size: 14px; color: var(--cinza); }
+section .secao { margin-top: 6px; }

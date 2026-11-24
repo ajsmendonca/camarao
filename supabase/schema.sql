@@ -44,9 +44,11 @@ create table if not exists produtos (
   nome       text not null unique,
   categoria  text not null check (categoria in ('racao','fertilizante','calcario','probiotico','outro')),
   unidade    text not null default 'kg' check (unidade in ('kg','g','L','mL','sc','un')),
+  estoque_minimo numeric(12,2),           -- avisa quando o saldo ficar abaixo
   ativo      boolean not null default true,
   criado_em  timestamptz not null default now()
 );
+alter table produtos add column if not exists estoque_minimo numeric(12,2);
 
 -- Perfil de cada usuário do app (gestor define o plano de ração; campo lança)
 create table if not exists perfis (
@@ -179,6 +181,40 @@ create table if not exists aplicacoes_insumos (
 );
 create index if not exists ix_insumo_ciclo on aplicacoes_insumos(ciclo_id, data);
 
+-- ---------- Estoque de rações e insumos ----------
+-- Entradas (notas recebidas) e ajustes de contagem são lançados pelo gestor.
+-- As saídas não são lançadas aqui: saem sozinhas de cada trato (racao.kg),
+-- colocação de bandeja (kg_bandejas — a sobra é descartada) e aplicação de insumo.
+create table if not exists estoque_movimentos (
+  id          uuid primary key,
+  produto_id  uuid not null references produtos(id),
+  data        date not null,
+  tipo        text not null check (tipo in ('entrada','ajuste')),
+  quantidade  numeric(12,2) not null check (quantidade <> 0 and (tipo = 'ajuste' or quantidade > 0)), -- ajuste pode ser negativo
+  documento   text,                      -- NF / fornecedor
+  observacao  text,
+  lancado_por text,
+  criado_em   timestamptz not null default now()
+);
+create index if not exists ix_estoque_prod on estoque_movimentos(produto_id, data);
+
+create or replace view vw_estoque_saldo with (security_invoker = true) as
+select p.id, p.nome, p.categoria, p.unidade, p.estoque_minimo, p.ativo,
+  coalesce(e.entradas, 0)                                   as entradas,
+  coalesce(e.ajustes, 0)                                    as ajustes,
+  coalesce(s.saidas, 0)                                     as saidas,
+  coalesce(e.entradas, 0) + coalesce(e.ajustes, 0) - coalesce(s.saidas, 0) as saldo
+from produtos p
+left join (select produto_id,
+                  sum(quantidade) filter (where tipo = 'entrada') entradas,
+                  sum(quantidade) filter (where tipo = 'ajuste')  ajustes
+           from estoque_movimentos group by produto_id) e on e.produto_id = p.id
+left join (select produto_id, sum(q) saidas from (
+             select produto_id, kg q from racao
+             union all select produto_id, kg_bandejas from bandeja_colocacoes
+             union all select produto_id, quantidade from aplicacoes_insumos
+           ) x where produto_id is not null group by produto_id) s on s.produto_id = p.id;
+
 -- ---------- Resumo por ciclo (painel) ----------
 create or replace view vw_ciclo_resumo as
 select
@@ -220,11 +256,12 @@ alter table bandeja_retiradas enable row level security;
 alter table biometrias   enable row level security;
 alter table agua         enable row level security;
 alter table ocorrencias  enable row level security;
+alter table estoque_movimentos enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['viveiros','ciclos','configuracoes','produtos','aplicacoes_insumos','racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias'] loop
+  foreach t in array array['viveiros','ciclos','configuracoes','aplicacoes_insumos','racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias'] loop
     execute format('drop policy if exists "%1$s_auth" on %1$I', t);
     execute format('create policy "%1$s_auth" on %1$I for all to authenticated using (true) with check (true)', t);
   end loop;
@@ -240,15 +277,19 @@ create policy "planos_gestor" on planos_racao for insert to authenticated with c
 drop policy if exists "planos_gestor_upd" on planos_racao;
 create policy "planos_gestor_upd" on planos_racao for update to authenticated using (eh_gestor()) with check (eh_gestor());
 
--- Exemplos de produtos (ajuste nomes/unidades aos que vocês usam)
-insert into produtos (nome, categoria, unidade) values
-  ('Ração engorda 35% PB 2,0 mm', 'racao', 'kg'),
-  ('Ração engorda 32% PB 2,4 mm', 'racao', 'kg'),
-  ('Ração crescimento 40% PB 1,2 mm', 'racao', 'kg'),
-  ('Ureia', 'fertilizante', 'kg'),
-  ('Superfosfato triplo', 'fertilizante', 'kg'),
-  ('Calcário dolomítico', 'calcario', 'kg'),
-  ('Cal hidratada', 'calcario', 'kg'),
-  ('Probiótico', 'probiotico', 'L'),
-  ('Melaço', 'outro', 'L')
-on conflict (nome) do nothing;
+-- Produtos e estoque: todos leem; só o gestor cadastra produto e lança entrada/ajuste
+drop policy if exists "produtos_auth" on produtos;
+drop policy if exists "produtos_ler" on produtos;
+create policy "produtos_ler" on produtos for select to authenticated using (true);
+drop policy if exists "produtos_gestor" on produtos;
+create policy "produtos_gestor" on produtos for insert to authenticated with check (eh_gestor());
+drop policy if exists "produtos_gestor_upd" on produtos;
+create policy "produtos_gestor_upd" on produtos for update to authenticated using (eh_gestor()) with check (eh_gestor());
+drop policy if exists "estoque_ler" on estoque_movimentos;
+create policy "estoque_ler" on estoque_movimentos for select to authenticated using (true);
+drop policy if exists "estoque_gestor" on estoque_movimentos;
+create policy "estoque_gestor" on estoque_movimentos for insert to authenticated with check (eh_gestor());
+drop policy if exists "estoque_gestor_upd" on estoque_movimentos;
+create policy "estoque_gestor_upd" on estoque_movimentos for update to authenticated using (eh_gestor()) with check (eh_gestor());
+
+-- Os produtos (rações e insumos) são cadastrados pelo gestor no app, em Estoque › Produto.
