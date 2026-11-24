@@ -29,6 +29,7 @@ const PARAMS = {
   salinidade: { rotulo: 'Salinidade (ppt)', min: 0, max: 60 },
   transparencia: { rotulo: 'Transparência (cm)', min: 0, max: 300 },
 }
+const mil = (n) => n >= 1e6 ? `${fmt(n / 1e6, 2)} mi` : `${fmt(n / 1000, 0)} mil`
 const minDesde = (data, hora) => Math.round((Date.now() - new Date(`${data}T${hora}:00`)) / 60000)
 const duracao = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`
 const somaHora = (hora, min) => { const [h, m] = hora.split(':').map(Number); const t = (h * 60 + m + min) % 1440; return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}` }
@@ -39,7 +40,7 @@ const CAT_PRODUTO = { racao: 'Ração', ...CAT_INSUMO }
 const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 // quantidade de estoque: sem casas quando é inteiro
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
-const TELA_NOME = { estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { ciclo: 'Novo ciclo', povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -79,12 +80,27 @@ export default function App() {
   useEffect(() => { if (aviso) { const t = setTimeout(() => setAviso(null), 3500); return () => clearTimeout(t) } }, [aviso])
 
   // ciclo ativo por viveiro + indicadores do dia
+  // ciclos do servidor + os abertos neste aparelho (povoamento); fecha os que tiveram despesca total aqui
+  const ciclos = useMemo(() => {
+    if (!cad) return []
+    const base = cad.ciclos || []
+    const locais = lanc.filter((l) => l.tipo === 'ciclo' && !base.some((c) => c.id === l.id)).map((l) => ({ id: l.id, ...l.dados }))
+    const fechados = new Set(lanc.filter((l) => l.tipo === 'despesca' && l.dados.tipo === 'total').map((l) => l.dados.ciclo_id))
+    return [...base, ...locais].map((c) => (fechados.has(c.id) ? { ...c, status: 'despescado' } : c))
+  }, [cad, lanc])
+
   const viveiros = useMemo(() => {
     if (!cad) return []
+    // lançamento que o resumo do servidor ainda não inclui (não enviado ou enviado depois do último carregamento)
+    const ref = cad.carregado_em || ''
+    const pendente = (l) => !l.sincronizado || (l.enviado_em || '') > ref
     return cad.viveiros.map((v) => {
-      const ciclo = cad.ciclos.find((c) => c.viveiro_id === v.id && c.status === 'em_cultivo')
+      const ciclo = ciclos.find((c) => c.viveiro_id === v.id && c.status === 'em_cultivo')
       if (!ciclo) return { ...v, ciclo: null }
       const meus = lanc.filter((l) => l.dados.ciclo_id === ciclo.id)
+      const res = cad.resumos?.[ciclo.id] || {}
+      const novos = meus.filter(pendente)
+      const despLocais = novos.filter((l) => l.tipo === 'despesca').map((l) => l.dados)
       const racaoHoje = meus.filter((l) => l.tipo === 'racao' && l.dados.data === hoje())
       // bandejas: junta colocações/retiradas deste aparelho com as do servidor (outros aparelhos)
       const retLocais = meus.filter((l) => l.tipo === 'retirada')
@@ -130,9 +146,19 @@ export default function App() {
         racaoRecente: meus.filter((l) => l.tipo === 'racao').slice(0, 28).map((l) => l.dados.kg),
       }
       r.kgHoje = r.kgLancoHoje + r.kgBandejaHoje
+      // povoamento, despesca e população prevista
+      r.povoamentos = meus.filter((l) => l.tipo === 'povoamento').map((l) => l.dados)
+      r.pl = (res.pl_quantidade || 0) + novos.filter((l) => l.tipo === 'povoamento').reduce((s, l) => s + l.dados.pl_quantidade, 0)
+      r.popDespescada = (res.populacao_despescada || 0) + despLocais.reduce((s, d) => s + Math.round(d.biomassa_kg * 1000 / d.peso_medio_g), 0)
+      r.biomassaDespescada = (res.biomassa_despescada_kg || 0) + despLocais.reduce((s, d) => s + d.biomassa_kg, 0)
+      r.racaoConsumida = (res.racao_consumida_kg || 0) + novos.reduce((s, l) => s + (l.tipo === 'racao' ? l.dados.kg
+        : l.tipo === 'colocacao' ? l.dados.kg_bandejas : l.tipo === 'retirada' ? -l.dados.sobra_kg : 0), 0)
+      r.sobrevEst = plano?.sobrevivencia_est ?? null
+      r.popPrevista = r.sobrevEst && r.pl ? Math.max(0, Math.round(r.pl * r.sobrevEst / 100) - r.popDespescada) : null
+      r.biomassaPrevista = r.popPrevista != null && r.ultimaBio ? r.popPrevista * r.ultimaBio.peso_medio_g / 1000 : null
       return r
     })
-  }, [cad, lanc])
+  }, [cad, lanc, ciclos])
 
   const pendentes = lanc.filter((l) => !l.sincronizado).length
   // saldo de estoque = saldo do servidor (até o último carregamento) + o que este aparelho lançou depois
@@ -164,8 +190,8 @@ export default function App() {
     } else await adicionarLancamento(tipo, dados, operador)
     await recarregar()
     setTela(voltar)
-    const nome = tipo === 'estoque' ? (dados.tipo === 'entrada' ? 'Entrada de estoque' : 'Ajuste de estoque') : TELA_NOME[tipo]
-    setAviso({ tipo: 'ok', texto: `${nome} ${['plano', 'insumo', 'produto', 'estoque'].includes(tipo) && dados?.tipo !== 'entrada' ? 'salvo' : 'salva'} no aparelho` + (online ? '' : ' — envia quando tiver sinal') })
+    const nome = extra && tipo === 'povoamento' ? 'Povoamento (novo ciclo)' : tipo === 'estoque' ? (dados.tipo === 'entrada' ? 'Entrada de estoque' : 'Ajuste de estoque') : TELA_NOME[tipo]
+    setAviso({ tipo: 'ok', texto: `${nome} ${['plano', 'insumo', 'produto', 'estoque', 'povoamento'].includes(tipo) && dados?.tipo !== 'entrada' ? 'salvo' : 'salva'} no aparelho` + (online ? '' : ' — envia quando tiver sinal') })
     if (online) sync()
   }
 
@@ -194,12 +220,14 @@ export default function App() {
         {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
+        {tela === 'povoamento' && gestor && <FormPovoamento viveiros={viveiros} fornecedores={cad.fornecedores || []} onSalvar={salvar} />}
+        {tela === 'despesca' && gestor && <FormDespesca viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'agua' && <FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} />}
         {tela === 'ocorrencia' && <FormOcorrencia viveiros={viveiros} onSalvar={salvar} />}
-        {tela === 'envios' && <Envios lanc={lanc} viveiros={viveiros} produtos={produtos} online={online} onSync={sync}
+        {tela === 'envios' && <Envios lanc={lanc} viveiros={viveiros} ciclos={ciclos} produtos={produtos} online={online} onSync={sync}
           onExcluir={async (id) => { await excluirLancamento(id); recarregar() }}
           onTrocarOperador={async () => { await setOperador(''); setOp(null) }}
           onResetDemo={async () => { await resetarDemo(); setCad(await carregarCadastro()); recarregar() }} />}
@@ -258,6 +286,8 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         <button className="acao ocor" onClick={() => irPara('ocorrencia')}><span>⚠️</span>Ocorrência</button>
         <button className="acao insumo" onClick={() => irPara('insumo')}><span>🧪</span>Insumos</button>
         {gestor && <button className="acao plano" onClick={() => irPara('plano')}><span>📋</span>Plano de ração</button>}
+        {gestor && <button className="acao povoa" onClick={() => irPara('povoamento')}><span>🦐</span>Povoamento</button>}
+        {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className={`acao estoque ${gestor ? 'largo' : ''}`} onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
@@ -269,6 +299,10 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
             {v.ciclo ? (
               <>
                 <div className="linha"><span>Peso</span><b>{v.ultimaBio ? `${fmt(v.ultimaBio.peso_medio_g, 2)} g` : '–'}</b></div>
+                <div className="linha"><span>Povoado</span><b>{v.pl ? `${mil(v.pl)} PL` : '–'}</b></div>
+                <div className="linha"><span>Previsto</span><b>{v.popPrevista != null
+                  ? <>{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : mil(v.popPrevista)} <small>{fmt(v.sobrevEst, 0)}%</small></>
+                  : '–'}</b></div>
                 {v.uniformidade?.cv != null && (
                   <div className="linha"><span>Uniformidade</span>
                     <b className={v.uniformidade.cv > 30 ? 'cv-ruim' : v.uniformidade.cv <= 20 ? 'cv-boa' : ''}>
@@ -289,7 +323,9 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
                 </div>
                 {v.dias > 90 && <div className="tag">Passou de 90 dias</div>}
               </>
-            ) : <div className="linha"><span>Sem ciclo ativo</span></div>}
+            ) : gestor
+              ? <button type="button" className="mais" onClick={() => irPara('povoamento')}>Vazio · povoar</button>
+              : <div className="linha"><span>Vazio · aguardando povoamento</span></div>}
           </div>
         ))}
       </div>
@@ -298,8 +334,8 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
 }
 
 // ---------- Componentes de formulário ----------
-function EscolhaViveiro({ viveiros, valor, onChange, marcados = [] }) {
-  const ativos = viveiros.filter((v) => v.ciclo)
+function EscolhaViveiro({ viveiros, valor, onChange, marcados = [], todos = false }) {
+  const ativos = todos ? viveiros : viveiros.filter((v) => v.ciclo)
   return (
     <fieldset className="campo">
       <legend>Viveiro</legend>
@@ -748,6 +784,7 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
   const [dist, setDist] = useState([]) // kg por trato (texto)
   const [manual, setManual] = useState(false)
   const [obs, setObs] = useState('')
+  const [sobrev, setSobrev] = useState('')
   const v = viveiros.find((x) => x.id === vid)
   const atual = v?.plano
   useEffect(() => {
@@ -756,6 +793,7 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
     setKgDia(atual ? String(atual.kg_dia).replace('.', ',') : '')
     setNTratos(atual?.tratos?.length || tratosPadrao)
     setManual(false); setObs('')
+    setSobrev(atual?.sobrevivencia_est != null ? String(atual.sobrevivencia_est).replace('.', ',') : '')
   }, [vid]) // eslint-disable-line
   const kd = num(kgDia)
   // divisão igual entre os tratos, a não ser que o gestor edite à mão
@@ -770,6 +808,12 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
   if (kd > 0 && manual && Math.abs(somaDist - kd) > 0.05) alertas.push(`A soma dos tratos (${fmt(somaDist)} kg) é diferente do total do dia (${fmt(kd)} kg).`)
   if (atual && kd > 0 && Math.abs(kd - atual.kg_dia) / atual.kg_dia > 0.3) alertas.push(`Mudança de ${fmt(((kd - atual.kg_dia) / atual.kg_dia) * 100, 0)}% em relação ao plano atual.`)
   const ck = v?.bandejaHoje?.retirada || v?.bandejaOntem?.retirada
+  const sv = num(sobrev)
+  const svOk = sv == null || (sv > 0 && sv <= 100)
+  const popEst = v && sv > 0 && v.pl ? Math.max(0, v.pl * sv / 100 - v.popDespescada) : null
+  const bioEst = popEst != null && v.ultimaBio ? popEst * v.ultimaBio.peso_medio_g / 1000 : null
+  if (sv > 100) alertas.push('Sobrevivência não pode passar de 100%.')
+  else if (sv > 0 && sv < 20) alertas.push(`Sobrevivência estimada de ${fmt(sv, 0)}% é muito baixa — confira.`)
   const racaoSel = racoes.find((p) => p.id === produto)
   // quantos dias o estoque dessa ração dura com os planos atuais (este viveiro com o novo kg/dia)
   const usoDia = viveiros.filter((x) => x.id !== vid && x.plano?.produto_id === produto).reduce((s, x) => s + x.plano.kg_dia, 0) + (kd > 0 ? kd : 0)
@@ -782,6 +826,7 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
           <div><span>Cultivo</span><b>{v.dias} dias</b></div>
           <div><span>Peso</span><b>{v.ultimaBio ? `${fmt(v.ultimaBio.peso_medio_g, 2)} g` : '–'}</b></div>
           <div><span>Plano atual</span><b>{atual ? `${fmt(atual.kg_dia)} kg/dia` : '—'}</b></div>
+          <div><span>Povoado</span><b>{v.pl ? mil(v.pl) : '—'}</b></div>
           <div><span>Colocado ontem</span><b>{fmt(v.racaoOntem)} kg</b></div>
           <div><span>Colocado hoje</span><b>{fmt(v.kgHoje)} kg</b></div>
           <div><span>Bandejas</span><b className={ck ? `ck-${ck.resultado}` : ''}>{ck ? `${RESULT_CK[ck.resultado]}${v.bandejaHoje?.retirada ? ' (hoje)' : ' (ontem)'}` : '—'}</b></div>
@@ -789,6 +834,12 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
         </div>
       )}
       {v && (<>
+        <CampoNum rotulo="Sobrevivência estimada" valor={sobrev} onChange={setSobrev} sufixo="%" />
+        {bioEst != null && (
+          <div className="resultado"><span>Biomassa estimada</span><b>{fmt(bioEst, 0)} kg</b>
+            <small>{mil(popEst)} camarões × {fmt(v.ultimaBio.peso_medio_g, 2)} g{kd > 0 && bioEst > 0 ? ` · ração do dia = ${fmt((kd / bioEst) * 100, 1)}% da biomassa` : ''}</small></div>
+        )}
+        {v.pl > 0 && sv > 0 && !v.ultimaBio && <p className="dica esq">Sem biometria por peso total: a biomassa aparece depois da primeira.</p>}
         <CampoNum rotulo="Ração prevista por dia" valor={kgDia} onChange={(x) => { setManual(false); setKgDia(x) }} sufixo="kg" grande />
         {atual && (
           <div className="ajustes">
@@ -819,9 +870,10 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
         <label className="campo"><span>Recado para o arraçoador</span>
           <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Opcional" /></label>
       </>)}
-      {v && <Salvar pronto={v && kd > 0 && produto && dist.every((x) => num(x) > 0)} alertas={alertas}
+      {v && <Salvar pronto={v && kd > 0 && produto && svOk && !Number.isNaN(sv) && dist.every((x) => num(x) > 0)} alertas={alertas}
         onSalvar={() => onSalvar('plano', {
           ciclo_id: v.ciclo.id, data_inicio: inicio, produto_id: produto, kg_dia: manual ? Math.round(somaDist * 100) / 100 : kd,
+          sobrevivencia_est: sv > 0 ? sv : null,
           tratos: dist.map((x, i) => ({ trato: i + 1, kg: num(x) })), observacao: obs.trim() || null,
         })} />}
     </div>
@@ -829,12 +881,15 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
 }
 
 // ---------- Lançamentos / envio ----------
-function Envios({ lanc, viveiros, produtos, online, onSync, onExcluir, onTrocarOperador, onResetDemo }) {
+function Envios({ lanc, viveiros, ciclos, produtos, online, onSync, onExcluir, onTrocarOperador, onResetDemo }) {
   const [enviando, setEnviando] = useState(false)
-  const nomeViveiro = (cid) => viveiros.find((v) => v.ciclo?.id === cid)?.codigo || '?'
+  const nomeViveiro = (cid) => viveiros.find((v) => v.id === ciclos.find((c) => c.id === cid)?.viveiro_id)?.codigo || '?'
   const resumo = (l) => {
     const d = l.dados
     if (l.tipo === 'estoque') { const pr = produtos.find((x) => x.id === d.produto_id); return `${d.tipo === 'entrada' ? 'entrada' : 'ajuste'} ${d.quantidade > 0 ? '+' : ''}${fq(d.quantidade)} ${pr?.unidade || ''}${d.documento ? ` · ${d.documento}` : ''}` }
+    if (l.tipo === 'ciclo') return `aberto em ${dataBR(d.data_povoamento)}`
+    if (l.tipo === 'povoamento') return `${mil(d.pl_quantidade)} PL${d.estagio ? ` ${d.estagio}` : ''}${d.fornecedor ? ` · ${d.fornecedor}` : ''}`
+    if (l.tipo === 'despesca') return `${d.tipo} · ${fmt(d.biomassa_kg, 0)} kg · ${fmt(d.peso_medio_g, 1)} g`
     if (l.tipo === 'produto') return `${CAT_PRODUTO[d.categoria]} · ${d.unidade}`
     if (l.tipo === 'racao') return `${d.trato}º trato · ${fmt(d.kg)} kg · ${nomeProd(produtos, d.produto_id)}`
     if (l.tipo === 'plano') return `${fmt(d.kg_dia)} kg/dia em ${d.tratos.length} tratos · a partir de ${dataBR(d.data_inicio)}`
@@ -859,8 +914,8 @@ function Envios({ lanc, viveiros, produtos, online, onSync, onExcluir, onTrocarO
         {lanc.length === 0 && <li className="vazio">Nenhum lançamento ainda.</li>}
         {lanc.map((l) => (
           <li key={l.id}>
-            <span className={`ic ${l.tipo}`}>{{ estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
-            <div><b>{l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
+            <span className={`ic ${l.tipo}`}>{{ ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
+            <div><b>{l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : l.tipo === 'ciclo' ? `${viveiros.find((v) => v.id === l.dados.viveiro_id)?.codigo || '?'} · Novo ciclo` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
               <small>{l.dados.data ? `${dataBR(l.dados.data)}${l.dados.hora ? ` ${l.dados.hora}` : ''}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</small></div>
             {l.sincronizado ? <em className="ok">✓</em>
               : <button className="excluir" onClick={() => onExcluir(l.id)} aria-label="Excluir">Excluir</button>}
@@ -1011,4 +1066,113 @@ function FormProduto({ produtos, onSalvar }) {
     <Salvar pronto={n.length >= 2 && !repetido && !Number.isNaN(m)} alertas={[]}
       onSalvar={() => onSalvar({ nome: n, categoria: cat, unidade: unid, estoque_minimo: m > 0 ? m : null })} />
   </>)
+}
+
+// ---------- Povoamento (gestor): abre o ciclo do viveiro vazio, ou complementa o atual ----------
+function FormPovoamento({ viveiros, fornecedores, onSalvar }) {
+  const [vid, setVid] = useState(null)
+  const [data, setData] = useState(hoje())
+  const [hora, setHora] = useState(agora())
+  const [qtd, setQtd] = useState('')
+  const [forn, setForn] = useState('')
+  const [estagio, setEstagio] = useState('')
+  const [obs, setObs] = useState('')
+  const v = viveiros.find((x) => x.id === vid)
+  const q = num(qtd)
+  const dens = v && q > 0 && v.area_ha ? q / (v.area_ha * 10000) : null
+  const alertas = []
+  if (v?.ciclo) alertas.push(`O ${v.codigo} já tem ciclo em cultivo (${v.dias} dias). Este povoamento será somado como complemento.`)
+  if (dens != null && dens > 80) alertas.push(`Densidade de ${fmt(dens, 0)} PL/m² é muito alta — confira a quantidade.`)
+  if (dens != null && dens < 3) alertas.push(`Densidade de ${fmt(dens, 1)} PL/m² é muito baixa — confira a quantidade.`)
+  const salvar = () => {
+    const dados = { data, hora, pl_quantidade: Math.round(q), fornecedor: forn.trim() || null, estagio: estagio.trim().toUpperCase() || null, observacao: obs.trim() || null }
+    if (v.ciclo) return onSalvar('povoamento', { ciclo_id: v.ciclo.id, ...dados })
+    const cid = uuid()
+    return onSalvar('povoamento', null, [
+      { tipo: 'ciclo', id: cid, dados: { viveiro_id: v.id, codigo: `${v.codigo}-${data}`, data_povoamento: data, status: 'em_cultivo' } },
+      { tipo: 'povoamento', dados: { ciclo_id: cid, ...dados } },
+    ])
+  }
+  return (
+    <div className="form">
+      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} todos marcados={viveiros.filter((x) => !x.ciclo).map((x) => x.id)} />
+      {!v && <p className="dica esq">Viveiros com • estão vazios. Povoar um viveiro vazio abre um novo ciclo.</p>}
+      {v && (v.ciclo
+        ? <div className="etapa aberta"><b>Complemento</b><span>Ciclo {v.ciclo.codigo} · já povoado {mil(v.pl)} PL</span></div>
+        : <div className="etapa"><b>Novo ciclo</b><span>{v.codigo} · {fmt(v.area_ha, 1)} ha</span></div>)}
+      {v && (<>
+        <CampoNum rotulo="Pós-larvas povoadas" valor={qtd} onChange={setQtd} sufixo="PL" grande />
+        {q > 0 && <div className="resultado"><span>Densidade</span><b>{fmt(dens, 1)} PL/m²</b><small>{mil(q)} PL em {fmt(v.area_ha, 1)} ha</small></div>}
+        <label className="campo"><span>Fornecedor (laboratório)</span>
+          <input value={forn} onChange={(e) => setForn(e.target.value)} placeholder="Nome do laboratório" /></label>
+        {fornecedores.length > 0 && (
+          <div className="chips">{fornecedores.slice(0, 6).map((f) => <button key={f} type="button" className={forn === f ? 'sel' : ''} onClick={() => setForn(f)}>{f}</button>)}</div>
+        )}
+        <label className="campo"><span>Estágio</span>
+          <input value={estagio} onChange={(e) => setEstagio(e.target.value)} placeholder="Ex.: PL12" /></label>
+        <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
+        <label className="campo"><span>Observação</span>
+          <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Aclimatação, transporte, mortalidade no saco…" /></label>
+        <p className="dica esq">O custo das pós-larvas vem do Apresenta.me (centro de custo de pós-larva).</p>
+      </>)}
+      {v && <Salvar pronto={q > 0 && q <= 5e6 && Number.isInteger(q) && hora} alertas={alertas} onSalvar={salvar} />}
+    </div>
+  )
+}
+
+// ---------- Despesca (gestor): parcial ou total; total fecha o ciclo ----------
+function FormDespesca({ viveiros, onSalvar }) {
+  const [vid, setVid] = useState(null)
+  const [tipo, setTipo] = useState('total')
+  const [data, setData] = useState(hoje())
+  const [hora, setHora] = useState(agora())
+  const [bio, setBio] = useState('')
+  const [peso, setPeso] = useState('')
+  const [obs, setObs] = useState('')
+  const v = viveiros.find((x) => x.id === vid)
+  useEffect(() => { setPeso(v?.ultimaBio ? String(Math.round(v.ultimaBio.peso_medio_g * 10) / 10).replace('.', ',') : '') }, [vid]) // eslint-disable-line
+  const b = num(bio), p = num(peso)
+  const pop = b > 0 && p > 0 ? Math.round(b * 1000 / p) : null
+  const popTotal = pop != null ? v.popDespescada + pop : null
+  const sobrev = popTotal != null && v.pl ? (popTotal / v.pl) * 100 : null
+  const fca = b > 0 ? v.racaoConsumida / (v.biomassaDespescada + b) : null
+  const impossivel = sobrev != null && sobrev > 100
+  const alertas = []
+  if (impossivel) alertas.push(`Sobrevivência de ${fmt(sobrev, 0)}% é impossível: confira biomassa, peso médio e o povoamento (${mil(v.pl)} PL).`)
+  else if (sobrev != null && sobrev < 30) alertas.push(`Sobrevivência de ${fmt(sobrev, 0)}% — bem baixa. Confira os valores.`)
+  if (v && !v.pl) alertas.push(`O ${v.codigo} não tem povoamento lançado: não dá para calcular a sobrevivência.`)
+  if (p > 0 && v?.ultimaBio && Math.abs(p - v.ultimaBio.peso_medio_g) / v.ultimaBio.peso_medio_g > 0.3)
+    alertas.push(`Peso médio bem diferente da última biometria (${fmt(v.ultimaBio.peso_medio_g, 2)} g).`)
+  if (p > 45) alertas.push('Peso médio acima de 45 g — confira se está em gramas.')
+  if (tipo === 'total' && v && !impossivel) alertas.push(`Despesca total encerra o ciclo do ${v.codigo} e libera o viveiro para novo povoamento.`)
+  return (
+    <div className="form">
+      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} />
+      {v && (<>
+        <div className="contexto">
+          <div><span>Cultivo</span><b>{v.dias} dias</b></div>
+          <div><span>Povoado</span><b>{v.pl ? mil(v.pl) : '—'}</b></div>
+          <div><span>Ração consumida</span><b>{fmt(v.racaoConsumida, 0)} kg</b></div>
+          {v.popDespescada > 0 && <small>Já despescado (parcial): {mil(v.popDespescada)} camarões · {fmt(v.biomassaDespescada, 0)} kg</small>}
+          {v.biomassaPrevista != null && <small>Previsto pelo gestor: {fmt(v.biomassaPrevista, 0)} kg ({fmt(v.sobrevEst, 0)}% de sobrevivência)</small>}
+        </div>
+        <Alternar opcoes={[['parcial', 'Parcial'], ['total', 'Total (encerra)']]} valor={tipo} onChange={setTipo} />
+        <div className="duas">
+          <CampoNum rotulo="Biomassa despescada" valor={bio} onChange={setBio} sufixo="kg" />
+          <CampoNum rotulo="Peso médio" valor={peso} onChange={setPeso} sufixo="g" />
+        </div>
+        {pop != null && (
+          <div className={`resultado ${impossivel ? 'ck-muita_sobra' : ''}`}>
+            <span>Sobrevivência real</span><b>{sobrev != null ? `${fmt(sobrev, 1)}%` : '–'}</b>
+            <small>{mil(pop)} camarões nesta despesca{v.popDespescada > 0 ? ` · ${mil(popTotal)} no total` : ''}{tipo === 'total' && fca ? ` · FCA ${fmt(fca, 2)}` : ''}</small>
+          </div>
+        )}
+        <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
+        <label className="campo"><span>Observação</span>
+          <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Comprador, classificação, ocorrências…" /></label>
+      </>)}
+      {v && <Salvar pronto={b > 0 && p > 0 && p < 100 && !impossivel && hora} alertas={alertas}
+        onSalvar={() => onSalvar('despesca', { ciclo_id: v.ciclo.id, data, hora, tipo, biomassa_kg: b, peso_medio_g: p, observacao: obs.trim() || null })} />}
+    </div>
+  )
 }

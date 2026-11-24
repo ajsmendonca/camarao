@@ -13,10 +13,18 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 ## Arquitetura
 1. **App de campo** (este repositório) — PWA React/Vite, funciona offline. Pronto (protótipo).
 2. **Painel do escritório** — AINDA NÃO FEITO. Indicadores por viveiro/ciclo e plano de ração em tela grande.
-3. **Integração Apresenta.me** — AINDA NÃO FEITA. Ler custos por viveiro via API (o Apresenta.me tem
-   centros de custo com API: `financial.costCenters.*`). Proposta: um centro de custo por viveiro +
-   "Fazenda – custo comum" (rateado pelo sistema de produção) + "Fazenda – investimento" (nunca entra no lote).
-   Custo da ração no viveiro = kg consumidos × preço médio da ração (compra entra no Apresenta.me como estoque, sem viveiro).
+3. **Integração Apresenta.me** — AINDA NÃO FEITA (fazer junto com o painel). **Só leitura**, nunca grava no Apresenta.me.
+   Decidido em 24/11/2026:
+   - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
+     **Fazenda Santo Antonio (id 765)**, separadas por plano de contas (Ração 15368 — inclui probiótico —, Energia 40,
+     ITR 15336, Manutenção máquinas 15337, Combustível 39, Vale alimentação 9180 etc.).
+   - **Não** criar centro de custo por viveiro. Ração/insumos = consumo do sistema × preço médio das notas;
+     pós-larva = direto no ciclo; o resto é custo comum **rateado por hectare × dia de cultivo** entre viveiros em cultivo.
+   - **Investimento** e **pós-larva** separados **por centro de custo** próprio (a criar no Apresenta.me, com confirmação);
+     investimento nunca entra no lote.
+   - Entrada de estoque deve poder escolher a nota de ração do Apresenta.me (fornecedor/valor/NF → preço médio).
+   - O Antônio já tem a chave de API; vai como segredo no Supabase (Edge Function), nunca no app nem no chat.
+   - API: `financial.transactions.index` com filtros `business_id`, `cost_center_id`, `type` (debit/credit), include `plan`.
 
 ## App de campo — como funciona
 - Tudo é salvo primeiro no aparelho (IndexedDB via idb-keyval) e enviado ao Supabase quando há sinal
@@ -54,19 +62,27 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
     botão "Mostrar N sem estoque"). Lançar acima do saldo **avisa** (não bloqueia) — a nota pode não ter sido lançada ainda.
   - No celular: saldo do servidor (até `cad.carregado_em`) + lançamentos do aparelho não enviados ou enviados depois.
   - Tela de saldo mostra "~N dias" de cada ração pela soma dos planos de ração vigentes que a usam.
+- **Povoamento (gestor)**: viveiro, PL povoadas, fornecedor, estágio (PL12), data/hora, obs. Viveiro vazio → abre
+  **novo ciclo** (id gerado no celular, código `V01-aaaa-mm-dd`); viveiro com ciclo → **complemento** (soma PL).
+  Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL não é digitado: vem do Apresenta.me.
+- **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
+  (população despescada / PL) e FCA (consumida / biomassa). **Sobrevivência >100% bloqueia**. Total fecha o ciclo (trigger).
+- **Sobrevivência estimada**: o gestor informa no **Plano de ração** (%). Previsto = PL × sobrev. − já despescado;
+  biomassa prevista = previsto × último peso. Mostra "ração do dia = X% da biomassa". Sem padrão automático.
 - **Plano de ração (gestor)**: por viveiro — kg/dia (total do viveiro, **incluindo** a ração das bandejas — confirmado),
   ração, nº de tratos, divisão por trato (igual ou manual), "vale a partir de", recado ao arraçoador.
   Atalhos −10/−5/+5/+10%. Vale até o próximo plano. O arraçoador vê previsto / colocado / falta.
 
 ### Tela inicial
-Cartão por viveiro: dias de cultivo, peso (biometria peso total), uniformidade (CV), ração hoje "colocado / previsto",
+Cartão por viveiro: dias de cultivo, peso (biometria peso total), povoado (PL), previsto (kg e % sobrev.), uniformidade (CV), ração hoje "colocado / previsto",
 status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, alerta ">90 dias".
 
 ## Banco (supabase/schema.sql)
-viveiros, ciclos, produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
+viveiros, ciclos (só datas/status), povoamentos, despescas (+ trigger fecha ciclo), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
-view vw_ciclo_resumo (ração lanço/bandejas/colocada/consumida, último peso só de biometria simples).
+view vw_ciclo_resumo (PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
+prevista, despescado, sobrevivência real e FCA). Ciclos/povoamentos/despescas: só gestor grava. Schema testado em PostgreSQL 16.
 Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e estoque: todos leem, só gestor grava (RLS).
 
 ## Achados da análise do Meu Pescado (úteis para o painel e para a migração)
@@ -89,7 +105,7 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
 1. Painel do escritório: FCA real (consumido/biomassa), sobrevivência estimada e real na despesca, curva de crescimento,
    distribuição por tamanho e CV ao longo do ciclo, custo/kg com dados do Apresenta.me, alerta de despesca (~90 dias),
    plano de ração com todos os viveiros lado a lado.
-2. Integração Apresenta.me (centros de custo por viveiro).
+2. Integração Apresenta.me (ver decisões em "Arquitetura").
 3. Foto na ocorrência; importação do histórico do Meu Pescado (exporta Excel).
 4. Rodar em paralelo com o Meu Pescado por um ciclo antes de desligá-lo.
 
@@ -99,7 +115,8 @@ npm install
 npm run dev          # desenvolvimento (sem .env = modo demonstração)
 npm run build        # gera dist/
 ```
-Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar viveiros, ciclos, usuários e perfis → no app (gestor): produtos e contagem inicial do estoque →
+Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar viveiros, usuários e perfis → no app (gestor): povoamento dos viveiros em cultivo (abre os ciclos),
+produtos e contagem inicial do estoque →
 Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar à tela inicial".
 
 Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (versão anterior ao estoque)

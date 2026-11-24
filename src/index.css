@@ -207,3 +207,8 @@ main { padding: 14px; }
 .estoque strong { font-size: 20px; color: var(--mar); white-space: nowrap; }
 .estoque strong em { font-style: normal; font-size: 14px; color: var(--cinza); }
 section .secao { margin-top: 6px; }
+
+/* v8: povoamento e despesca */
+.acao.povoa { background: #e6f0f2; border-color: #bcd5db; color: var(--mar); }
+.acao.despesca { background: #fdf3e7; border-color: #f0d6b4; color: #7a4a07; }
+.card .mais { margin-top: 4px; width: 100%; text-align: center; }
