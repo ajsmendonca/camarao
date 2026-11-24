@@ -106,7 +106,7 @@ export async function carregarCadastro() {
         supabase.from('viveiros').select('*').eq('ativo', true).order('codigo'),
         supabase.from('ciclos').select('*').in('status', ['preparacao', 'em_cultivo']),
         supabase.from('configuracoes').select('*'),
-        supabase.from('vw_ciclo_resumo').select('ciclo_id, ultimo_peso_g, ultima_biometria, pl_quantidade, racao_consumida_kg, populacao_despescada, biomassa_despescada_kg').in('status', ['preparacao', 'em_cultivo']),
+        supabase.from('vw_ciclo_resumo').select('ciclo_id, ultimo_peso_g, ultima_biometria, pl_quantidade, racao_consumida_kg, populacao_despescada, biomassa_despescada_kg, sobrevivencia_est_pct').in('status', ['preparacao', 'em_cultivo']),
         // colocações recentes (de qualquer aparelho) e se já têm retirada
         supabase.from('bandeja_colocacoes').select('id, ciclo_id, data, hora, kg_bandejas, lancado_por, bandeja_retiradas(id, data, hora, sobra_kg, resultado, lancado_por)').gte('data', desde),
         supabase.from('vw_estoque_saldo').select('id, nome, categoria, unidade, estoque_minimo, saldo').eq('ativo', true).order('nome'),
@@ -128,7 +128,8 @@ export async function carregarCadastro() {
         viveiros: v.data, ciclos: c.data, config,
         resumos: Object.fromEntries((b.data || []).map((r) => [r.ciclo_id, {
           pl_quantidade: Number(r.pl_quantidade), racao_consumida_kg: Number(r.racao_consumida_kg),
-          populacao_despescada: Number(r.populacao_despescada), biomassa_despescada_kg: Number(r.biomassa_despescada_kg) }])),
+          populacao_despescada: Number(r.populacao_despescada), biomassa_despescada_kg: Number(r.biomassa_despescada_kg),
+          sobrevivencia_est_pct: r.sobrevivencia_est_pct == null ? null : Number(r.sobrevivencia_est_pct) }])),
         clientes: cl.data || [],
         previsoes: (pv.data || []).map((r) => ({ ...r, biomassa_prev_kg: Number(r.biomassa_prev_kg), peso_medio_prev_g: Number(r.peso_medio_prev_g),
           preco_kg_prev: r.preco_kg_prev == null ? null : Number(r.preco_kg_prev) })),

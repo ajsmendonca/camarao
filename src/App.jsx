@@ -192,7 +192,11 @@ export default function App() {
       r.biomassaDespescada = (res.biomassa_despescada_kg || 0) + despLocais.reduce((s, d) => s + d.biomassa_kg, 0)
       r.racaoConsumida = (res.racao_consumida_kg || 0) + novos.reduce((s, l) => s + (l.tipo === 'racao' ? l.dados.kg
         : l.tipo === 'colocacao' ? l.dados.kg_bandejas : l.tipo === 'retirada' ? -l.dados.sobra_kg : 0), 0)
-      r.sobrevEst = plano?.sobrevivencia_est ?? null
+      // sobrevivência estimada: plano lançado neste aparelho e ainda não refletido no servidor > a mais recente do
+      // servidor (plano ou estimativa avulsa, ex.: carga do Meu Pescado) > a do plano vigente
+      const planoLocal = novos.filter((l) => l.tipo === 'plano' && l.dados.sobrevivencia_est != null && l.dados.data_inicio <= hoje())
+        .sort((a, b) => (b.dados.data_inicio + b.criado_em).localeCompare(a.dados.data_inicio + a.criado_em))[0]
+      r.sobrevEst = planoLocal?.dados.sobrevivencia_est ?? res.sobrevivencia_est_pct ?? plano?.sobrevivencia_est ?? null
       r.popPrevista = r.sobrevEst && r.pl ? Math.max(0, Math.round(r.pl * r.sobrevEst / 100) - r.popDespescada) : null
       r.biomassaPrevista = r.popPrevista != null && r.ultimaBio ? r.popPrevista * r.ultimaBio.peso_medio_g / 1000 : null
       r.previsoes = previsoes.filter((p) => p.ciclo_id === ciclo.id)
@@ -854,7 +858,8 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
     setKgDia(atual ? String(atual.kg_dia).replace('.', ',') : '')
     setNTratos(atual?.tratos?.length || tratosPadrao)
     setManual(false); setObs('')
-    setSobrev(atual?.sobrevivencia_est != null ? String(atual.sobrevivencia_est).replace('.', ',') : '')
+    const sv0 = atual?.sobrevivencia_est ?? v.sobrevEst
+    setSobrev(sv0 != null ? String(sv0).replace('.', ',') : '')
   }, [vid]) // eslint-disable-line
   const kd = num(kgDia)
   // divisão igual entre os tratos, a não ser que o gestor edite à mão

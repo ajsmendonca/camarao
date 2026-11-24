@@ -324,6 +324,19 @@ create table if not exists consumo_anterior (
 );
 create index if not exists ix_consumo_ant_ciclo on consumo_anterior(ciclo_id);
 
+-- Sobrevivência estimada fora do plano de ração (ex.: carga do Meu Pescado). Vale a informação mais recente entre
+-- esta tabela e o plano de ração (`planos_racao.sobrevivencia_est`).
+create table if not exists estimativas_sobrevivencia (
+  id          uuid primary key default gen_random_uuid(),
+  ciclo_id    uuid not null references ciclos(id),
+  data        date not null,
+  pct         numeric(5,2) not null check (pct > 0 and pct <= 100),
+  origem      text,
+  lancado_por text,
+  criado_em   timestamptz not null default now()
+);
+create index if not exists ix_est_sobrev on estimativas_sobrevivencia(ciclo_id, data desc);
+
 -- ---------- Resumo por ciclo (painel) ----------
 -- Sobrevivência: estimada = a do plano de ração vigente (gestor); real = população despescada / PL povoadas.
 -- Previsto = PL × sobrevivência estimada − já despescado (parcial); biomassa prevista = previsto × último peso.
@@ -367,9 +380,12 @@ left join (select bc.ciclo_id, sum(bc.kg_bandejas) bandejas, sum(coalesce(br.sob
 left join lateral (select peso_medio_g, data from biometrias
                    where ciclo_id = c.id and tipo = 'simples'   -- por tamanho é só distribuição
                    order by data desc, hora desc limit 1) b on true
-left join lateral (select sobrevivencia_est from planos_racao
-                   where ciclo_id = c.id and data_inicio <= current_date and sobrevivencia_est is not null
-                   order by data_inicio desc, criado_em desc limit 1) pr on true
+left join lateral (select pct as sobrevivencia_est from (
+                     select sobrevivencia_est as pct, data_inicio as d, criado_em from planos_racao
+                      where ciclo_id = c.id and data_inicio <= current_date and sobrevivencia_est is not null
+                     union all
+                     select pct, data, criado_em from estimativas_sobrevivencia where ciclo_id = c.id and data <= current_date
+                   ) x order by d desc, criado_em desc limit 1) pr on true
 left join (select ciclo_id, sum(biomassa_kg) biomassa, sum(populacao) pop from despescas group by ciclo_id) d on d.ciclo_id = c.id
 left join (select ciclo_id, sum(quantidade) mortos from ocorrencias
            where tipo = 'mortalidade' group by ciclo_id) o on o.ciclo_id = c.id;
@@ -401,6 +417,7 @@ alter table ocorrencias  enable row level security;
 alter table estoque_movimentos enable row level security;
 alter table povoamentos  enable row level security;
 alter table consumo_anterior enable row level security;
+alter table estimativas_sobrevivencia enable row level security;
 alter table despescas    enable row level security;
 alter table clientes     enable row level security;
 alter table previsoes_despesca enable row level security;
@@ -443,7 +460,7 @@ create policy "estoque_gestor_upd" on estoque_movimentos for update to authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior'] loop
+  foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior','estimativas_sobrevivencia'] loop
     execute format('drop policy if exists "%1$s_auth" on %1$I', t);
     execute format('drop policy if exists "%1$s_ler" on %1$I', t);
     execute format('create policy "%1$s_ler" on %1$I for select to authenticated using (true)', t);

@@ -128,8 +128,10 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   "Lançar despesca" (preenche kg e peso e liga `previsao_id`) e "Cancelar". Cartão do viveiro mostra "Despesca prev.".
   Banco: despesca com `previsao_id` marca a previsão como **realizada**; despesca total/perda cancela as outras abertas.
   **Clientes e previsões têm preço: só o gestor lê (RLS)**.
-- **Sobrevivência estimada**: o gestor informa no **Plano de ração** (%). Previsto = PL × sobrev. − já despescado;
-  biomassa prevista = previsto × último peso. Mostra "ração do dia = X% da biomassa". Sem padrão automático.
+- **Sobrevivência estimada**: vale a **mais recente** entre o **Plano de ração** (`planos_racao.sobrevivencia_est`) e a
+  tabela `estimativas_sobrevivencia` (estimativa avulsa; usada na carga do Meu Pescado). **Biomassa esperada =
+  PL povoadas × sobrevivência estimada × peso da última biometria (peso total)** − já despescado (definição do Antônio).
+  O plano de ração vem preenchido com a sobrevivência atual. Mostra "ração do dia = X% da biomassa".
 - **Plano de ração (gestor)**: por viveiro — kg/dia (total do viveiro, **incluindo** a ração das bandejas — confirmado),
   ração, nº de tratos, divisão por trato (igual ou manual), "vale a partir de", recado ao arraçoador.
   Atalhos −10/−5/+5/+10%. Vale até o próximo plano. O arraçoador vê previsto / colocado / falta.
@@ -143,6 +145,7 @@ viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_c
 clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
+estimativas_sobrevivencia (sobrevivência estimada avulsa, por ciclo e data),
 consumo_anterior (consumo antes do sistema, por ciclo e produto; entra em racao_consumida_kg, fora do estoque),
 view vw_racao_diaria (ração por ciclo e dia: lanço, bandejas, sobra, colocado, consumido — painel),
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
@@ -171,6 +174,8 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
   povoamento − dias em preparação (V01 16/08, V02 23/10, V03/V04 14/09, V05 14/07, V06 13/07, V07 27/10, V08 14/07;
   código do ciclo atualizado), fornecedor com nome completo, e **ração e fertilização já usadas** gravadas em
   `consumo_anterior` (não mexe no estoque; a ração entra na ração consumida e no FCA). Custos do Meu Pescado não importados.
+  A pedido do Antônio, a **sobrevivência estimada do Meu Pescado** foi gravada em `estimativas_sobrevivencia` (24/11/2026):
+  80% (V01, V03, V04, V06, V08), 61,83% (V05), 100% (V02, V07). Biomassa e FCA parcial conferem com o Meu Pescado.
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
