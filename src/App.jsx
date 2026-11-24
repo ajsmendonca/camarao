@@ -4,6 +4,7 @@ import {
   sincronizar, getOperador, setOperador, hoje, agora, MODO_DEMO, resetarDemo, supabase,
   emailDoLogin, normalizaLogin, sair, equipe,
 } from './data'
+import Painel from './Painel'
 
 const num = (s) => {
   if (s === '' || s == null) return null
@@ -50,7 +51,13 @@ export default function App() {
   const [cad, setCad] = useState(null)
   const [lanc, setLanc] = useState([])
   const [operador, setOp] = useState(undefined)
-  const [tela, setTela] = useState('inicio')
+  // o painel do escritório também abre direto pelo endereço .../#painel
+  const [tela, setTelaBase] = useState(() => (location.hash === '#painel' ? 'painel' : 'inicio'))
+  const setTela = useCallback((t) => {
+    setTelaBase(t)
+    if (t === 'painel') history.replaceState(null, '', '#painel')
+    else if (location.hash) history.replaceState(null, '', location.pathname + location.search)
+  }, [])
   const [online, setOnline] = useState(navigator.onLine)
   const [aviso, setAviso] = useState(null)
   const [logado, setLogado] = useState(MODO_DEMO ? true : undefined)
@@ -73,7 +80,7 @@ export default function App() {
   useEffect(() => {
     if (!logado) return
     (async () => {
-      const c = await carregarCadastro(); setCad(c); setTela('inicio')
+      const c = await carregarCadastro(); setCad(c); setTelaBase((t) => (t === 'painel' && c?.perfil === 'gestor' ? 'painel' : 'inicio'))
       // com login, quem lança é o usuário logado; o nome digitado só existe na demonstração
       setOp(MODO_DEMO ? (await getOperador()) || null : c?.nome || 'Usuário'); await recarregar(); sync()
     })()
@@ -238,6 +245,7 @@ export default function App() {
 
   if (logado === false) return <Login />
   if (!cad || operador === undefined) return <div className="carregando">Carregando…</div>
+  if (tela === 'painel' && gestor) return <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online} onVoltar={() => setTela('inicio')} />
   if (!operador && MODO_DEMO) return <Entrada onOk={async (n) => { await setOperador(n); setOp(n); setTela('inicio') }} />
 
   return (
@@ -333,6 +341,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
         {gestor && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
+        {gestor && <button className="acao painel-btn largo" onClick={() => irPara('painel')}><span>📊</span>Painel do escritório</button>}
         {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}

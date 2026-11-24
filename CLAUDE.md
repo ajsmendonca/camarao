@@ -12,7 +12,17 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 
 ## Arquitetura
 1. **App de campo** (este repositório) — PWA React/Vite, funciona offline. Pronto (protótipo).
-2. **Painel do escritório** — AINDA NÃO FEITO. Indicadores por viveiro/ciclo e plano de ração em tela grande.
+2. **Painel do escritório** — v1 feito em 24/11/2026 (`src/Painel.jsx`; gestor; botão "Painel do escritório" na tela
+   inicial ou endereço `…/#painel`, que sobrevive ao recarregar). Precisa de sinal (busca o histórico no Supabase via
+   `carregarPainel` em `data.js`; na demonstração usa séries de exemplo). Mostra: indicadores (viveiros em cultivo,
+   biomassa estimada, ração hoje × previsto, despesca prevista em 30 dias em kg e R$, ração em estoque e dias pelo plano);
+   alertas (≥110 dias crítico, >90 atenção, OD<3, muita sobra/zerou, sem biometria ou >10 dias, sem plano, sem
+   sobrevivência estimada, previsão atrasada, estoque abaixo do mínimo, ração <7 dias); tabela dos viveiros (dias, PL,
+   PL/m², peso, ganho g/semana, sobrev. est., biomassa est., ração consumida, **FCA parcial** = consumida ÷ (biomassa est.
+   + despescada), ração hoje/plano, bandejas, OD); por viveiro: curva de crescimento (peso × dias, linha de referência
+   em 90 dias) e ração colocada por dia nos últimos 30 dias com o previsto tracejado; previsões de despesca; estoque;
+   ciclos encerrados (dias, PL, biomassa, sobrevivência real, FCA). Gráficos em SVG próprio, com dica ao passar o mouse.
+   Falta: custos/resultado (Apresenta.me), plano de ração lado a lado editável no painel.
 3. **Integração Apresenta.me** — AINDA NÃO FEITA (fazer junto com o painel). **Só leitura**, nunca grava no Apresenta.me.
    Decidido em 24/11/2026:
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
@@ -133,6 +143,7 @@ viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_c
 clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
+view vw_racao_diaria (ração por ciclo e dia: lanço, bandejas, sobra, colocado, consumido — painel),
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
 prevista, despescado, sobrevivência real e FCA). Ciclos/povoamentos/despescas: só gestor grava. Schema testado em PostgreSQL 16.
 Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e estoque: todos leem, só gestor grava (RLS).
@@ -149,12 +160,15 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
 → No sistema novo: investimento nunca entra no custo do lote; validações impedem sobrevivência >100%, etc.
 
 ## Pendências / perguntas em aberto
+- **Banco real ainda sem ciclos** (24/11/2026): o Antônio precisa iniciar o ciclo e lançar o povoamento de cada viveiro
+  (botão Ciclos). Uma carga automática com os dados do Meu Pescado foi bloqueada pelo controle de permissões — só fazer
+  com confirmação explícita dele (datas de povoamento, PL e pesos reais).
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
 
 ## Próximos passos sugeridos
-1. Painel do escritório: FCA real (consumido/biomassa), sobrevivência estimada e real na despesca, curva de crescimento,
+1. Painel do escritório (v1 pronto; falta custos e plano lado a lado): FCA real (consumido/biomassa), sobrevivência estimada e real na despesca, curva de crescimento,
    distribuição por tamanho e CV ao longo do ciclo, custo/kg com dados do Apresenta.me, alerta de despesca (~90 dias),
    plano de ração com todos os viveiros lado a lado.
 2. Integração Apresenta.me (ver decisões em "Arquitetura").

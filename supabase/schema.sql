@@ -358,6 +358,16 @@ left join (select ciclo_id, sum(biomassa_kg) biomassa, sum(populacao) pop from d
 left join (select ciclo_id, sum(quantidade) mortos from ocorrencias
            where tipo = 'mortalidade' group by ciclo_id) o on o.ciclo_id = c.id;
 
+-- Ração por viveiro e dia (painel): lanço, bandejas e sobra pesada (sobra na data da colocação)
+create or replace view vw_racao_diaria with (security_invoker = true) as
+select ciclo_id, data, sum(lanco) as lanco_kg, sum(bandejas) as bandejas_kg, sum(sobra) as sobra_kg,
+       sum(lanco) + sum(bandejas) as colocado_kg, sum(lanco) + sum(bandejas) - sum(sobra) as consumido_kg
+from (
+  select ciclo_id, data, kg as lanco, 0::numeric as bandejas, 0::numeric as sobra from racao
+  union all select ciclo_id, data, 0, kg_bandejas, 0 from bandeja_colocacoes
+  union all select bc.ciclo_id, bc.data, 0, 0, br.sobra_kg from bandeja_retiradas br join bandeja_colocacoes bc on bc.id = br.colocacao_id
+) x group by ciclo_id, data;
+
 -- ---------- Segurança: só usuários logados ----------
 alter table viveiros     enable row level security;
 alter table ciclos       enable row level security;

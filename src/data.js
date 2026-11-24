@@ -216,3 +216,56 @@ export async function equipe(acao, dados = {}) {
 export const getOperador = () => get('operador')
 export const setOperador = (n) => set('operador', n)
 export async function resetarDemo() { await set('cadastro', cadastroDemo()); await set('lancamentos', []) }
+
+// ---------- Painel do escritório: séries históricas (precisa de sinal; na demonstração, séries de exemplo) ----------
+export async function carregarPainel(cad) {
+  if (MODO_DEMO) return painelDemo(cad)
+  const desde = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10)
+  const ids = (cad.ciclos || []).map((c) => c.id)
+  const [res, bio, rac, ag, ret, enc] = await Promise.all([
+    supabase.from('vw_ciclo_resumo').select('*').in('status', ['preparacao', 'em_cultivo']),
+    supabase.from('biometrias').select('ciclo_id, data, peso_medio_g').eq('tipo', 'simples').in('ciclo_id', ids).order('data'),
+    supabase.from('vw_racao_diaria').select('*').in('ciclo_id', ids).gte('data', desde).order('data'),
+    supabase.from('agua').select('ciclo_id, data, hora, od, ph, temperatura, salinidade').in('ciclo_id', ids).gte('data', desde)
+      .order('data', { ascending: false }).order('hora', { ascending: false }),
+    supabase.from('bandeja_retiradas').select('ciclo_id, data, resultado').in('ciclo_id', ids).gte('data', desde).order('data', { ascending: false }),
+    supabase.from('vw_ciclo_resumo').select('*').eq('status', 'encerrado').order('data_fim', { ascending: false }).limit(40),
+  ])
+  const erro = [res, bio, rac, ag, ret, enc].find((r) => r.error)?.error
+  if (erro) throw erro
+  const n = (x) => (x == null ? null : Number(x))
+  return {
+    resumos: Object.fromEntries(res.data.map((r) => [r.ciclo_id, r])),
+    biometrias: bio.data.map((r) => ({ ...r, peso_medio_g: n(r.peso_medio_g) })),
+    racao: rac.data.map((r) => ({ ...r, colocado_kg: n(r.colocado_kg), consumido_kg: n(r.consumido_kg), sobra_kg: n(r.sobra_kg) })),
+    agua: ag.data.map((r) => ({ ...r, od: n(r.od), ph: n(r.ph), temperatura: n(r.temperatura) })),
+    retiradas: ret.data,
+    encerrados: enc.data,
+    demo: false,
+  }
+}
+
+function painelDemo(cad) {
+  const biometrias = [], racao = [], agua = [], retiradas = []
+  const dia = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) }
+  ;(cad.ciclos || []).forEach((c, i) => {
+    const dias = Math.round((Date.now() - new Date(c.data_povoamento)) / 864e5)
+    const atual = cad.biometrias.find((b) => b.ciclo_id === c.id)?.peso_medio_g
+    if (atual) for (let d = 14; d <= dias; d += 7) {
+      const frac = d / dias
+      biometrias.push({ ciclo_id: c.id, data: dia(dias - d), peso_medio_g: Math.round(atual * frac ** 1.35 * 100) / 100 })
+    }
+    const kg = cad.planos.find((p) => p.ciclo_id === c.id)?.kg_dia || 0
+    for (let d = Math.min(30, dias); d >= 1; d--) {
+      const base = kg * (1 - d * 0.008) * (0.92 + ((i * 7 + d * 13) % 17) / 100)
+      racao.push({ ciclo_id: c.id, data: dia(d), colocado_kg: Math.round(base), consumido_kg: Math.round(base * 0.97), sobra_kg: Math.round(base * 0.03) })
+    }
+    agua.push({ ciclo_id: c.id, data: dia(0), hora: '05:30', od: [4.8, 5.2, 3.6, 4.1, 2.7, 3.9, 5.5, 3.2][i % 8], ph: 7.9, temperatura: 29.5, salinidade: 18 })
+    retiradas.push({ ciclo_id: c.id, data: dia(1), resultado: ['pouca_sobra', 'zerou', 'pouca_sobra', 'muita_sobra', 'pouca_sobra', 'zerou', 'pouca_sobra', 'pouca_sobra'][i % 8] })
+  })
+  const encerrados = [
+    { viveiro: 'V07', codigo: 'V07-exemplo-1', data_povoamento: dia(120), data_fim: dia(28), dias_cultivo: 92, pl_quantidade: 300000, biomassa_despescada_kg: 2650, populacao_despescada: 212000, sobrevivencia_real_pct: 70.7, fca: 1.48 },
+    { viveiro: 'V02', codigo: 'V02-exemplo-1', data_povoamento: dia(135), data_fim: dia(26), dias_cultivo: 109, pl_quantidade: 300000, biomassa_despescada_kg: 1980, populacao_despescada: 138000, sobrevivencia_real_pct: 46, fca: 2.21 },
+  ]
+  return { resumos: {}, biometrias, racao, agua, retiradas, encerrados, demo: true }
+}
