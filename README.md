@@ -23,7 +23,7 @@ O financeiro continua no Apresenta.me; este projeto cuida só da produção.
 
 ## Colocar no ar
 1. Crie um projeto no Supabase e rode `supabase/schema.sql` no SQL Editor.
-2. Cadastre os viveiros (tabela `viveiros`). Os ciclos são iniciados pelo gestor no app (Ciclos e povoamento).
+2. Cadastre os viveiros (tabela `viveiros`). Os ciclos são iniciados pelo gestor no app (botão Ciclos).
 3. Em Authentication, crie os usuários (e-mail e senha) e cadastre cada um em `perfis` como `gestor` ou `campo`.
    Depois, entrando como gestor no app: Estoque › Produto (cadastrar rações e insumos) e Estoque › Contagem (saldo inicial).
 4. No Vercel, importe o repositório e defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.

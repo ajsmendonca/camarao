@@ -196,16 +196,16 @@ main { padding: 14px; }
 .lista-opcoes .saldo.baixo { color: var(--alerta); }
 .lista-opcoes .saldo.zerado { color: var(--erro); }
 .lista-opcoes button.sel .saldo { color: #fff; }
-.estoque { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.estoque li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
+.lista-estoque { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lista-estoque li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px;
   border-radius: 12px; background: var(--branco); border: 1px solid var(--linha); border-left: 5px solid var(--ok); }
-.estoque li.baixo { border-left-color: var(--alerta); }
-.estoque li.zerado { border-left-color: var(--erro); }
-.estoque li div { display: flex; flex-direction: column; min-width: 0; }
-.estoque li small { color: var(--cinza); font-size: 13px; }
-.estoque li.baixo small { color: #7a5a00; } .estoque li.zerado small { color: var(--erro); }
-.estoque strong { font-size: 20px; color: var(--mar); white-space: nowrap; }
-.estoque strong em { font-style: normal; font-size: 14px; color: var(--cinza); }
+.lista-estoque li.baixo { border-left-color: var(--alerta); }
+.lista-estoque li.zerado { border-left-color: var(--erro); }
+.lista-estoque li div { display: flex; flex-direction: column; min-width: 0; }
+.lista-estoque li small { color: var(--cinza); font-size: 13px; }
+.lista-estoque li.baixo small { color: #7a5a00; } .lista-estoque li.zerado small { color: var(--erro); }
+.lista-estoque strong { font-size: 20px; color: var(--mar); white-space: nowrap; }
+.lista-estoque strong em { font-style: normal; font-size: 14px; color: var(--cinza); }
 section .secao { margin-top: 6px; }
 
 /* v8: povoamento e despesca */
@@ -242,9 +242,9 @@ section .secao { margin-top: 6px; }
 /* v11: equipe */
 .acao.equipe { background: #eef0f6; border-color: #cfd5e6; color: #2c3a66; }
 .acao:disabled { opacity: .45; }
-.equipe { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.equipe li { border-radius: 12px; background: var(--branco); border: 1px solid var(--linha); overflow: hidden; }
-.equipe li.inativo { opacity: .6; }
+.lista-equipe { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lista-equipe li { border-radius: 12px; background: var(--branco); border: 1px solid var(--linha); overflow: hidden; }
+.lista-equipe li.inativo { opacity: .6; }
 .linha-u { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; background: none; text-align: left; color: var(--tinta); }
 .linha-u div { display: flex; flex-direction: column; min-width: 0; } .linha-u small { color: var(--cinza); font-size: 13px; overflow-wrap: anywhere; }
 .perfil { font-style: normal; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--areia); color: var(--cinza); white-space: nowrap; }
@@ -253,3 +253,9 @@ section .secao { margin-top: 6px; }
 .u-acoes button { padding: 10px 12px; border-radius: 10px; background: var(--areia); color: var(--mar); font-weight: 700; font-size: 14px; }
 .u-acoes button.perigo { background: #fbe9e7; color: var(--erro); }
 .cod { font-family: ui-monospace, monospace; font-size: 17px; background: var(--areia); padding: 1px 6px; border-radius: 6px; }
+
+/* v12: botões da tela inicial todos iguais (mesma altura, ícone e texto alinhados à esquerda) */
+.acoes { grid-auto-rows: 104px; }
+.acao { height: 100%; min-height: 0; justify-content: space-between; text-align: left; line-height: 1.15; padding: 16px; overflow: hidden; }
+.acao span { font-size: 28px; line-height: 1; height: 30px; }
+.acao.largo { flex-direction: column; align-items: flex-start; }

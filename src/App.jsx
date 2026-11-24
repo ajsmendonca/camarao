@@ -329,7 +329,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         <button className="acao ocor" onClick={() => irPara('ocorrencia')}><span>⚠️</span>Ocorrência</button>
         <button className="acao insumo" onClick={() => irPara('insumo')}><span>🧪</span>Insumos</button>
         {gestor && <button className="acao plano" onClick={() => irPara('plano')}><span>📋</span>Plano de ração</button>}
-        {gestor && <button className="acao povoa" onClick={() => irPara('ciclo')}><span>🔄</span>Ciclos e povoamento</button>}
+        {gestor && <button className="acao povoa" onClick={() => irPara('ciclo')}><span>🔄</span>Ciclos</button>}
         {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
         {gestor && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
@@ -1015,7 +1015,7 @@ function SaldoEstoque({ produtos, viveiros, gestor }) {
     {grupos.map(([nome, lista]) => (
       <section key={nome}>
         <h2 className="secao">{nome}</h2>
-        <ul className="estoque">
+        <ul className="lista-estoque">
           {lista.map((p) => {
             const baixo = p.estoque_minimo != null && p.saldo < p.estoque_minimo
             const dias = usoDia[p.id] && p.saldo > 0 ? p.saldo / usoDia[p.id] : null
@@ -1520,7 +1520,7 @@ function TelaEquipe({ online }) {
           }} />
         : <button type="button" className="primario" onClick={() => setNovo(true)}>+ Novo usuário</button>}
       {lista == null && !erro && <p className="dica">Carregando…</p>}
-      <ul className="equipe">
+      <ul className="lista-equipe">
         {(lista || []).map((u) => (
           <li key={u.id} className={u.ativo ? '' : 'inativo'}>
             <button type="button" className="linha-u" onClick={() => setAberto(aberto === u.id ? null : u.id)}>

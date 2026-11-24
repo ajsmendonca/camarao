@@ -106,7 +106,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - **Pós-larva no estoque** (categoria `pos_larva`, unidade PL; entrada/contagem digitadas em milheiros): entrada = PL compradas;
   povoamento escolhe o lote e **sai do estoque**; contagem acerta as diferenças (bônus do laboratório, perdas).
 - **Encerrar sem despesca**: na Despesca, tipo **Perda total** (motivo obrigatório, biomassa 0) encerra o ciclo.
-- **Povoamento (gestor)**, tela "Ciclos e povoamento": PL povoadas, lote de PL do estoque, fornecedor, estágio (PL12), data/hora, obs.
+- **Povoamento (gestor)**, tela "Ciclos": PL povoadas, lote de PL do estoque, fornecedor, estágio (PL12), data/hora, obs.
   Ciclo em preparação → passa para em cultivo (trigger no banco); já em cultivo → **complemento** (soma PL).
   Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem da nota no Apresenta.me (plano Larva do Camarão) ligada à entrada de estoque.
 - **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
