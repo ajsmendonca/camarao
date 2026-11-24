@@ -160,6 +160,14 @@ Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar v
 produtos e contagem inicial do estoque →
 Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar à tela inicial".
 
+**Produção (no ar desde 24/11/2026):**
+- App: **https://camarao-beryl.vercel.app** (Vercel, projeto `camarao`, time ajsmendoncas-projects; ligado ao GitHub — cada push no `main` publica).
+- Supabase: projeto **camarao** (ref `clozwpjdpinuroctpoca`, região sa-east-1 / São Paulo, org Pro do Antônio).
+  Schema aplicado e viveiros V01–V08 cadastrados (V08 3,8 ha). Variáveis `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` no Vercel.
+- Sessões na nuvem: ambiente `camarao` com tokens do Supabase (api.supabase.com) e do Vercel (api.vercel.com) injetados pelo proxy.
+  SQL no banco: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/database/query` com `{"query": ...}`.
+- Falta: criar os usuários (Auth) e os perfis (gestor/campo).
+
 Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (modo demonstração; atualizada em 24/11/2026 com estoque, ciclos, povoamento, despesca e previsões — publicar o `dist/` com os arquivos)
 Repositório: https://github.com/ajsmendonca/camarao
 
