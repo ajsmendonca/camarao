@@ -18,18 +18,26 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
      **Fazenda Santo Antonio (id 765)**, separadas por plano de contas (Ração 15368 — inclui probiótico —, Energia 40,
      ITR 15336, Manutenção máquinas 15337, Combustível 39, Vale alimentação 9180 etc.).
-   - **Não** criar centro de custo por viveiro. Ração/insumos = consumo do sistema × preço médio das notas;
-     pós-larva = direto no ciclo; o resto é custo comum **rateado por hectare × dia** entre os ciclos abertos
-     (preparação + cultivo), pela data do lançamento (`vw_ciclo_resumo.hectare_dia`).
-   - Centros de custo criados em 24/11/2026, filhos de Fazenda Santo Antonio (765):
-     **Fazenda Santo Antonio – Investimento (1829)** → nunca entra no lote;
-     **Fazenda Santo Antonio – Viveiros (1830)** → custos diretos dos viveiros (ração, insumos, pós-larva), que o sistema
-     distribui pelo consumo/povoamento de cada ciclo. O que ficar no 765 é custo comum, rateado por ha × dia.
+   - **Regra de custo (decidida em 24/11/2026)** — o sistema puxa **todas** as despesas da Barra Maricultura, exceto o centro
+     **Fazenda Santo Antonio – Investimento (1829)**, que nunca entra no lote. Para cada nota:
+     1. ligada a uma **entrada de estoque** → vai aos viveiros pelo consumo (ração/insumo) ou povoamento (PL), a preço médio;
+     2. **atribuída a um ciclo** pelo gestor → custo direto daquele ciclo;
+     3. **todo o resto é rateado automaticamente** por hectare × dia entre os ciclos abertos (preparação + cultivo)
+        na data do lançamento (`vw_ciclo_resumo.hectare_dia`).
+     Notas com plano **Ração (15368)**, **Larva do Camarão (16636)** ou **Insumos de viveiro (16938)** não ligadas ao estoque
+     aparecem no painel como *"provável estoque não lançado"* e contam no rateio como **provisórias**; ao serem ligadas,
+     saem do rateio e o custo é recalculado. Perdas de estoque (ajuste negativo de contagem) também vão para o rateio.
+   - O escritório continua lançando tudo em Fazenda Santo Antonio (765); só investimento vai no 1829. Sem centro por viveiro.
+     (O centro "Fazenda Santo Antonio – Viveiros" (1830) foi criado e depois **inativado** — não é usado.)
+   - Plano de contas CAMARÃO (15367): Ração 15368, Larva do Camarão 16636, Análise de Água – ITPS 16637,
+     Insumos de viveiro 16938 (criado em 24/11/2026 para calcário, fertilizante, probiótico).
    - **O Apresenta.me não tem itens** (só valor, fornecedor, plano, descrição). Quantidade vem do sistema de produção
      (entrada de estoque); valor vem do lançamento financeiro → preço médio = Σ valor / Σ quantidade por produto.
      As notas lançadas pelo **Sistema de Vistos** trazem nas observações a **chave da NF-e** (`[chave=44 dígitos]`), o que
-     permite ler os itens do XML (produto, quantidade, valor) — falta saber onde o Sistema de Vistos guarda o XML.
-   - Entrada de estoque deve poder escolher a nota de ração do Apresenta.me (fornecedor/valor/NF → preço médio).
+     permitiria ler os itens do XML — **não usado por ora**.
+   - Entrada de estoque deve poder escolher a nota do Apresenta.me (fornecedor/valor/NF → preço médio); se a nota
+     tiver vários produtos, o gestor divide o valor (sugestão proporcional à quantidade).
+   - O Antônio prefere controlar pelo Apresenta.me (não depender do XML do Sistema de Vistos).
    - O Antônio já tem a chave de API; vai como segredo no Supabase (Edge Function), nunca no app nem no chat.
    - API: `financial.transactions.index` com filtros `business_id`, `cost_center_id`, `type` (debit/credit), include `plan`.
 
@@ -80,7 +88,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - **Encerrar sem despesca**: na Despesca, tipo **Perda total** (motivo obrigatório, biomassa 0) encerra o ciclo.
 - **Povoamento (gestor)**, tela "Ciclos e povoamento": PL povoadas, lote de PL do estoque, fornecedor, estágio (PL12), data/hora, obs.
   Ciclo em preparação → passa para em cultivo (trigger no banco); já em cultivo → **complemento** (soma PL).
-  Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem do Apresenta.me (centro 1830).
+  Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem da nota no Apresenta.me (plano Larva do Camarão) ligada à entrada de estoque.
 - **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
   (população despescada / PL) e FCA (consumida / biomassa). **Sobrevivência >100% bloqueia**. Total **encerra** o ciclo (trigger).
 - **Sobrevivência estimada**: o gestor informa no **Plano de ração** (%). Previsto = PL × sobrev. − já despescado;

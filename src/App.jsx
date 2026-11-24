@@ -1177,7 +1177,7 @@ function FormPovoamento({ v, pls, fornecedores, onSalvar }) {
     <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
     <label className="campo"><span>Observação</span>
       <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Aclimatação, transporte, mortalidade no saco…" /></label>
-    <p className="dica esq">As PL saem do estoque; o custo vem da nota no Apresenta.me (centro de custo Fazenda Santo Antonio – Viveiros).</p>
+    <p className="dica esq">As PL saem do estoque; o custo vem da nota no Apresenta.me ligada à entrada de estoque.</p>
     <Salvar pronto={q > 0 && q <= 5e6 && Number.isInteger(q) && hora && !(inicio && data < inicio)} alertas={alertas}
       onSalvar={() => onSalvar('povoamento', { ciclo_id: v.ciclo.id, data, hora, pl_quantidade: Math.round(q), produto_id: produto,
         fornecedor: forn.trim() || null, estagio: estagio.trim().toUpperCase() || null, observacao: obs.trim() || null })} />
