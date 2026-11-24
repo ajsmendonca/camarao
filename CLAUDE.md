@@ -166,7 +166,9 @@ Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar
   Schema aplicado e viveiros V01–V08 cadastrados (V08 3,8 ha). Variáveis `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` no Vercel.
 - Sessões na nuvem: ambiente `camarao` com tokens do Supabase (api.supabase.com) e do Vercel (api.vercel.com) injetados pelo proxy.
   SQL no banco: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/database/query` com `{"query": ...}`.
-- Falta: criar os usuários (Auth) e os perfis (gestor/campo).
+- Usuários: Antonio José (antonio@barramaricultura.com.br) — gestor, criado em 24/11/2026 com senha provisória. Novos usuários:
+  Auth admin API (`https://clozwpjdpinuroctpoca.supabase.co/auth/v1/admin/users`, service_role via api-keys da Management API)
+  + linha em `perfis`. O app tem "Trocar senha" e "Sair" na tela de lançamentos.
 
 Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (modo demonstração; atualizada em 24/11/2026 com estoque, ciclos, povoamento, despesca e previsões — publicar o `dist/` com os arquivos)
 Repositório: https://github.com/ajsmendonca/camarao

@@ -928,6 +928,7 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
 // ---------- Lançamentos / envio ----------
 function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, onExcluir, onTrocarOperador, onResetDemo }) {
   const [enviando, setEnviando] = useState(false)
+  const [senhaAberta, setSenhaAberta] = useState(false)
   const nomeViveiro = (cid) => viveiros.find((v) => v.id === ciclos.find((c) => c.id === cid)?.viveiro_id)?.codigo || '?'
   const resumo = (l) => {
     const d = l.dados
@@ -972,8 +973,11 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
       <p className="dica">Depois de enviado, a correção é feita no escritório.</p>
       <div className="links">
         <button onClick={onTrocarOperador}>Trocar usuário</button>
+        {!MODO_DEMO && <button onClick={() => setSenhaAberta((x) => !x)}>Trocar senha</button>}
+        {!MODO_DEMO && <button onClick={() => supabase.auth.signOut()}>Sair</button>}
         {MODO_DEMO && <button onClick={onResetDemo}>Zerar demonstração</button>}
       </div>
+      {senhaAberta && <TrocarSenha online={online} onFim={() => setSenhaAberta(false)} />}
     </div>
   )
 }
@@ -1442,4 +1446,33 @@ function FormPrevisao({ viveiros, clientes, onSalvar }) {
     </>)}
     {v && <Salvar pronto={pronto} alertas={alertas} onSalvar={salvar} />}
   </>)
+}
+
+// ---------- Troca de senha (precisa de sinal) ----------
+function TrocarSenha({ online, onFim }) {
+  const [s1, setS1] = useState('')
+  const [s2, setS2] = useState('')
+  const [msg, setMsg] = useState(null)
+  const [aguarde, setAguarde] = useState(false)
+  const erro = s1 && s1.length < 8 ? 'A senha precisa de pelo menos 8 caracteres.' : s2 && s1 !== s2 ? 'As senhas não conferem.' : null
+  const salvar = async () => {
+    setAguarde(true)
+    const { error } = await supabase.auth.updateUser({ password: s1 })
+    setAguarde(false)
+    if (error) setMsg({ tipo: 'erro', texto: 'Não foi possível trocar a senha: ' + error.message })
+    else { setMsg({ tipo: 'ok', texto: 'Senha trocada.' }); setS1(''); setS2(''); setTimeout(onFim, 1500) }
+  }
+  return (
+    <div className="etapa">
+      <b>Trocar senha</b>
+      <label className="campo"><span>Nova senha</span>
+        <input type="password" value={s1} onChange={(e) => setS1(e.target.value)} autoComplete="new-password" /></label>
+      <label className="campo"><span>Repita a nova senha</span>
+        <input type="password" value={s2} onChange={(e) => setS2(e.target.value)} autoComplete="new-password" /></label>
+      {erro && <p className="dica esq aviso-sem-plano">{erro}</p>}
+      {msg && <p className={`dica esq ${msg.tipo === 'erro' ? 'aviso-sem-plano' : ''}`}>{msg.texto}</p>}
+      <button className="primario" disabled={!online || aguarde || !s1 || erro || s1 !== s2} onClick={salvar}>
+        {!online ? 'Sem sinal' : aguarde ? 'Salvando…' : 'Salvar nova senha'}</button>
+    </div>
+  )
 }
