@@ -46,7 +46,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { registros: 'Registros', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -139,7 +139,12 @@ export default function App() {
       const res = cad.resumos?.[ciclo.id] || {}
       const novos = meus.filter(pendente)
       const despLocais = novos.filter((l) => l.tipo === 'despesca' && l.dados.peso_medio_g > 0).map((l) => l.dados)
-      const racaoHoje = meus.filter((l) => l.tipo === 'racao' && l.dados.data === hoje())
+      // tratos: os deste aparelho + os do servidor (outros aparelhos/importados), sem repetir o mesmo id
+      const tratosCiclo = [
+        ...meus.filter((l) => l.tipo === 'racao').map((l) => ({ id: l.id, ...l.dados })),
+        ...(cad.tratos || []).filter((t) => t.ciclo_id === ciclo.id && !meus.some((l) => l.id === t.id)),
+      ]
+      const racaoHoje = tratosCiclo.filter((t) => t.data === hoje()).map((t) => ({ dados: t }))
       // bandejas: junta colocações/retiradas deste aparelho com as do servidor (outros aparelhos)
       const retLocais = meus.filter((l) => l.tipo === 'retirada')
       const colocacoes = [
@@ -180,10 +185,10 @@ export default function App() {
         uniformidade: distrib ? { cv: cvClasses(distrib.classes), data: distrib.data } : null,
         plano, planoFuturo,
         ultimoProduto: meus.find((l) => l.tipo === 'racao')?.dados.produto_id || plano?.produto_id || null,
-        racaoOntem: meus.filter((l) => l.tipo === 'racao' && l.dados.data === diasAntes(1)).reduce((s, l) => s + l.dados.kg, 0)
+        racaoOntem: tratosCiclo.filter((t) => t.data === diasAntes(1)).reduce((s, t) => s + t.kg, 0)
           + colocacoes.filter((c) => c.data === diasAntes(1)).reduce((s, c) => s + (c.kg_bandejas || 0), 0),
         bandejaOntem: colocacoes.find((c) => c.data === diasAntes(1)) || null,
-        racaoRecente: meus.filter((l) => l.tipo === 'racao').slice(0, 28).map((l) => l.dados.kg),
+        racaoRecente: tratosCiclo.slice(0, 28).map((t) => t.kg),
       }
       r.kgHoje = r.kgLancoHoje + r.kgBandejaHoje
       // povoamento, despesca e população prevista
@@ -278,7 +283,7 @@ export default function App() {
         {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
           online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'equipe' && admin && <TelaEquipe online={online} />}
-        {tela === 'registros' && admin && <Registros viveiros={viveiros} produtos={produtos} online={online}
+        {tela === 'registros' && gestor && <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin}
           onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
@@ -350,10 +355,10 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
         {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
         {admin && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
-        {admin && !MODO_DEMO && <button className="acao registros" onClick={() => irPara('registros')}><span>📝</span>Registros</button>}
-        {gestor && <button className="acao painel-btn" onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
+        {gestor && !MODO_DEMO && <button className="acao registros" onClick={() => irPara('registros')}><span>📝</span>Histórico</button>}
+        {gestor && <button className={`acao painel-btn ${admin || MODO_DEMO ? '' : 'largo'}`} onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
         {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
-        {gestor && MODO_DEMO && <button className="acao registros" disabled title="Só no sistema real"><span>📝</span>Registros</button>}
+        {gestor && MODO_DEMO && <button className="acao registros" disabled title="Só no sistema real"><span>📝</span>Histórico</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>

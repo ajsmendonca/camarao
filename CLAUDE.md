@@ -15,10 +15,11 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 2. **Painel do escritório** — v1 feito em 24/11/2026 (`src/Painel.jsx`; gestor; botão "Painel do escritório" na tela
    inicial ou endereço `…/#painel`, que sobrevive ao recarregar). Precisa de sinal (busca o histórico no Supabase via
    `carregarPainel` em `data.js`; na demonstração usa séries de exemplo). Mostra: indicadores (viveiros em cultivo,
-   biomassa estimada, ração hoje × previsto, despesca prevista em 30 dias em kg e R$, ração em estoque e dias pelo plano);
+   biomassa estimada, **valor de venda estimado**, ração hoje × previsto, despesca prevista em 30 dias em kg e R$, ração em estoque e dias pelo plano);
    alertas (≥110 dias crítico, >90 atenção, OD<3, muita sobra/zerou, sem biometria ou >10 dias, sem plano, sem
    sobrevivência estimada, previsão atrasada, estoque abaixo do mínimo, ração <7 dias); tabela dos viveiros (dias, PL,
-   PL/m², peso, ganho g/semana, sobrev. est., biomassa est., ração consumida, **FCA parcial** = consumida ÷ (biomassa est.
+   PL/m², peso, ganho g/semana, sobrev. est., biomassa est., **R$/kg e valor de venda** (biomassa est. × preço: da previsão
+   de despesca do viveiro, senão média R$/kg das vendas dos últimos 90 dias), ração consumida, linha de total, **FCA parcial** = consumida ÷ (biomassa est.
    + despescada), ração hoje/plano, bandejas, OD); por viveiro: curva de crescimento (peso × dias, linha de referência
    em 90 dias) e ração colocada por dia nos últimos 30 dias com o previsto tracejado; previsões de despesca; estoque;
    **histórico de ciclos encerrados**: quadro por faixa de dias de cultivo (até 89, 90–109, ≥110: ciclos, sobrevivência,
@@ -79,6 +80,8 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   Tudo pela **Edge Function `usuarios`** (`supabase/functions/usuarios/index.ts`; usa service_role no servidor; confere
   que quem chama é gestor). Publicar: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/functions/deploy?slug=usuarios`
   (multipart: `metadata` {"entrypoint_path":"index.ts","name":"usuarios","verify_jwt":true} + `file`).
+- **Ração de hoje/ontem e tratos feitos** somam os tratos deste aparelho + os do servidor (`cad.tratos`, últimos 2 dias,
+  de outros aparelhos ou importados), sem repetir id.
 - **Atualização automática** (24/11/2026): `src/main.jsx` registra o service worker (`virtual:pwa-register`, autoUpdate,
   skipWaiting/clientsClaim) e o app **recarrega sozinho** quando há versão nova; confere a cada 30 min e ao voltar para o app.
   Antes só atualizava na 2ª abertura — o que fez o Antônio, já como admin, ver o app antigo como se fosse "campo".
@@ -90,7 +93,9 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   todos leem/inserem, **só admin altera/apaga**; tabelas do gestor só admin apaga; viveiros/configurações só admin altera.
   O envio offline dos lançamentos do campo usa upsert com `ignoreDuplicates` (reenvio do mesmo id não precisa de UPDATE).
   Antônio = admin. Equipe cadastrada por ele: José Rodrigues (gestor), antonio.campo (campo).
-- **Registros** (admin, precisa de sinal; `src/Registros.jsx`): escolhe viveiro → ciclo (atual ou anteriores) → tipo
+- **Histórico** (botão 📝; **gestor consulta, admin também corrige/apaga**; precisa de sinal; `src/Registros.jsx`,
+  prop `podeEditar`): ração tem visão **por dia** (vw_racao_diaria: lanço, bandejas, sobra, total) e **por trato**; biometria
+  mostra o **ganho g/semana** sobre a anterior. Escolhe viveiro → ciclo (atual ou anteriores) → tipo
   (Ração, Bandejas, Biometria, Água, Ocorrência, Insumos, Planos, Povoamento, Despesca); lista e, ao tocar, corrige ou
   apaga (2 toques). Bandejas: colocação + retirada juntas (resultado recalculado). Plano: novo kg/dia reparte os tratos na
   mesma proporção. Apagar despesca total/perda **reabre o ciclo** (trigger `reabre_ciclo`); apagar o único povoamento

@@ -102,7 +102,7 @@ export async function carregarCadastro() {
       const desde = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10)
       const { data: sess } = await supabase.auth.getSession()
       const uid = sess.session?.user?.id
-      const [v, c, cfg, b, col, prod, pl, pf, bc, fo, cl, pv] = await Promise.all([
+      const [v, c, cfg, b, col, prod, pl, pf, bc, fo, cl, pv, rc] = await Promise.all([
         supabase.from('viveiros').select('*').eq('ativo', true).order('codigo'),
         supabase.from('ciclos').select('*').in('status', ['preparacao', 'em_cultivo']),
         supabase.from('configuracoes').select('*'),
@@ -119,6 +119,8 @@ export async function carregarCadastro() {
         // clientes e previsões de despesca: só o gestor enxerga (RLS); para o campo voltam vazios
         supabase.from('clientes').select('id, nome, telefone').eq('ativo', true).order('nome'),
         supabase.from('previsoes_despesca').select('*').eq('status', 'aberta').order('data_prevista'),
+        // tratos recentes (de qualquer aparelho ou importados) para ração de hoje/ontem e tratos feitos
+        supabase.from('racao').select('id, ciclo_id, data, hora, trato, kg').gte('data', desde).order('data', { ascending: false }).limit(500),
       ])
       if (v.error || c.error) throw v.error || c.error
       const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] }
@@ -131,6 +133,7 @@ export async function carregarCadastro() {
           populacao_despescada: Number(r.populacao_despescada), biomassa_despescada_kg: Number(r.biomassa_despescada_kg),
           sobrevivencia_est_pct: r.sobrevivencia_est_pct == null ? null : Number(r.sobrevivencia_est_pct) }])),
         clientes: cl.data || [],
+        tratos: (rc.data || []).map((r) => ({ ...r, kg: Number(r.kg), hora: String(r.hora).slice(0, 5) })),
         previsoes: (pv.data || []).map((r) => ({ ...r, biomassa_prev_kg: Number(r.biomassa_prev_kg), peso_medio_prev_g: Number(r.peso_medio_prev_g),
           preco_kg_prev: r.preco_kg_prev == null ? null : Number(r.preco_kg_prev) })),
         fornecedores: [...new Set((fo.data || []).map((r) => r.fornecedor).filter(Boolean))],

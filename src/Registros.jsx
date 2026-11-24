@@ -1,5 +1,5 @@
-// Registros (admin): lista, corrige e apaga lançamentos por viveiro e ciclo (atual ou anteriores).
-// Precisa de sinal: lê e grava direto no banco (RLS: só admin altera/apaga).
+// Histórico / Registros: lista os lançamentos por viveiro e ciclo (atual ou anteriores).
+// Gestor só consulta; admin também corrige e apaga. Precisa de sinal: lê e grava direto no banco (RLS: só admin altera/apaga).
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './data'
 
@@ -47,7 +47,9 @@ const TIPOS = {
     resumo: (r) => r.tipo === 'perda_total' ? `perda total · ${r.observacao || ''}` : `${r.tipo} · ${fmt(r.biomassa_kg, 0)} kg · ${fmt(r.peso_medio_g, 1)} g` },
 }
 
-export default function Registros({ viveiros, produtos, online, onAlterado }) {
+export default function Registros({ viveiros, produtos, online, onAlterado, podeEditar = false }) {
+  const [visao, setVisao] = useState('dia')   // ração: por dia ou por trato
+  const [dias, setDias] = useState(null)
   const [vid, setVid] = useState(null)
   const [ciclos, setCiclos] = useState([])
   const [cid, setCid] = useState(null)
@@ -76,6 +78,13 @@ export default function Registros({ viveiros, produtos, online, onAlterado }) {
     if (error) { setMsg({ erro: true, texto: error.message }); setLinhas([]) } else setLinhas(data || [])
   }, [cid, cfg])
   useEffect(() => { carregar() }, [carregar])
+  // ração por dia (lanço + bandejas − sobra), da view vw_racao_diaria
+  useEffect(() => {
+    if (!cid || tipo !== 'racao') return
+    setDias(null)
+    supabase.from('vw_racao_diaria').select('*').eq('ciclo_id', cid).order('data', { ascending: false }).limit(400)
+      .then(({ data }) => setDias(data || []))
+  }, [cid, tipo, linhas])
 
   const depois = async (texto) => { setMsg({ texto }); await carregar(); onAlterado?.() }
   const salvar = async (r, valores) => {
@@ -133,16 +142,21 @@ export default function Registros({ viveiros, produtos, online, onAlterado }) {
         <div className="chips reg-tipos">{Object.entries(TIPOS).map(([k, t]) => (
           <button key={k} type="button" className={tipo === k ? 'sel' : ''} onClick={() => setTipo(k)}>{t.nome}</button>))}</div>
         {msg && <p className={`dica esq ${msg.erro ? 'aviso-sem-plano' : 'msg-ok'}`}>{msg.texto}</p>}
-        {linhas == null ? <p className="dica">Carregando…</p> : linhas.length === 0 ? <p className="dica">Nenhum registro de {cfg.nome.toLowerCase()} neste ciclo.</p> : (<>
-          <p className="dica esq">{linhas.length} registro(s){linhas.length === 400 ? ' (mostrando os 400 mais recentes)' : ''}. Toque para corrigir ou apagar.</p>
-          <ul className="reg-lista">{linhas.map((r) => (
+        {tipo === 'racao' && (
+          <div className="alternar">{[['dia', 'Por dia'], ['trato', 'Por trato']].map(([k, n]) => (
+            <button key={k} type="button" className={visao === k ? 'sel' : ''} onClick={() => setVisao(k)}>{n}</button>))}</div>
+        )}
+        {tipo === 'racao' && visao === 'dia' ? <RacaoPorDia dias={dias} /> :
+        linhas == null ? <p className="dica">Carregando…</p> : linhas.length === 0 ? <p className="dica">Nenhum registro de {cfg.nome.toLowerCase()} neste ciclo.</p> : (<>
+          <p className="dica esq">{linhas.length} registro(s){linhas.length === 400 ? ' (mostrando os 400 mais recentes)' : ''}.{podeEditar ? ' Toque para corrigir ou apagar.' : ''}</p>
+          <ul className="reg-lista">{linhas.map((r, i) => (
             <li key={r.id} className={aberto === r.id ? 'aberto' : ''}>
-              <button type="button" className="reg-linha" onClick={() => setAberto(aberto === r.id ? null : r.id)}>
+              <button type="button" className="reg-linha" disabled={!podeEditar} onClick={() => setAberto(aberto === r.id ? null : r.id)}>
                 <b>{dataBR(r[cfg.ordem])}{r.hora ? ` ${hhmm(r.hora)}` : ''}</b>
-                <span>{cfg.resumo(r, nomeProd)}</span>
+                <span>{cfg.resumo(r, nomeProd)}{tipo === 'biometria' && ganhoSemanal(r, linhas.slice(i + 1))}</span>
                 <small>{r.lancado_por || ''}</small>
               </button>
-              {aberto === r.id && <Editor cfg={cfg} tipo={tipo} r={r} produtos={produtos} onSalvar={(v) => salvar(r, v)} onApagar={() => apagar(r)} onFechar={() => setAberto(null)} />}
+              {podeEditar && aberto === r.id && <Editor cfg={cfg} tipo={tipo} r={r} produtos={produtos} onSalvar={(v) => salvar(r, v)} onApagar={() => apagar(r)} onFechar={() => setAberto(null)} />}
             </li>))}</ul>
         </>)}
       </>)}
@@ -188,4 +202,30 @@ function Editor({ cfg, tipo, r, produtos, onSalvar, onApagar, onFechar }) {
       {confirmar && <p className="dica esq aviso-sem-plano">Toque de novo para apagar de vez.{avisoApagar}</p>}
     </div>
   )
+}
+
+// ganho de peso por semana em relação à biometria (peso total) anterior
+function ganhoSemanal(r, anteriores) {
+  if (r.tipo === 'classes') return ''
+  const a = anteriores.find((x) => x.tipo !== 'classes')
+  if (!a) return ''
+  const dias = Math.round((new Date(r.data) - new Date(a.data)) / 864e5)
+  if (dias <= 0) return ''
+  const g = (Number(r.peso_total_g) / Number(r.n_amostra) - Number(a.peso_total_g) / Number(a.n_amostra)) / dias * 7
+  return ` · ${g >= 0 ? '+' : ''}${fmt(g, 2)} g/semana`
+}
+
+function RacaoPorDia({ dias }) {
+  if (dias == null) return <p className="dica">Carregando…</p>
+  if (dias.length === 0) return <p className="dica">Nenhuma ração lançada neste ciclo.</p>
+  const tot = dias.reduce((s, d) => s + Number(d.consumido_kg || 0), 0)
+  return (<>
+    <p className="dica esq">{dias.length} dia(s) com ração · {fmt(tot, 0)} kg consumidos nesses dias.</p>
+    <div className="p-tabela"><table className="reg-tabela">
+      <thead><tr><th>Data</th><th className="n">Lanço</th><th className="n">Bandejas</th><th className="n">Sobra</th><th className="n">Total</th></tr></thead>
+      <tbody>{dias.map((d) => (
+        <tr key={d.data}><td>{dataBR(d.data)}</td><td className="n">{fmt(d.lanco_kg, 1)}</td><td className="n">{Number(d.bandejas_kg) ? fmt(d.bandejas_kg, 2) : '–'}</td>
+          <td className="n">{Number(d.sobra_kg) ? fmt(d.sobra_kg, 2) : '–'}</td><td className="n"><b>{fmt(d.consumido_kg, 1)}</b></td></tr>))}</tbody>
+    </table></div>
+  </>)
 }

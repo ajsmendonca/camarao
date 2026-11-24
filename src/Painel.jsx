@@ -42,6 +42,20 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
     return bio > 0 && v.racaoConsumida > 0 ? v.racaoConsumida / bio : null
   }
 
+  // ---- preço de venda: previsão de despesca do viveiro; senão média das vendas dos últimos 90 dias
+  const desde90 = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10)
+  const vendas90 = (serie?.encerrados || []).filter((c) => c.data_fim >= desde90 && c.faturamento > 0 && c.biomassa_despescada_kg > 0)
+  const bio90 = vendas90.reduce((s, c) => s + c.biomassa_despescada_kg, 0)
+  const precoRef = bio90 > 0 ? vendas90.reduce((s, c) => s + c.faturamento, 0) / bio90 : null
+  const precoDe = (v) => {
+    const pv = v.previsoes.filter((p) => p.preco_kg_prev != null)
+    const kg = pv.reduce((s, p) => s + p.biomassa_prev_kg, 0)
+    if (kg > 0) return { preco: pv.reduce((s, p) => s + p.biomassa_prev_kg * p.preco_kg_prev, 0) / kg, fonte: 'previsão' }
+    return precoRef != null ? { preco: precoRef, fonte: 'média 90 dias' } : null
+  }
+  const valorVenda = (v) => { const p = precoDe(v); return p && v.biomassaPrevista != null ? v.biomassaPrevista * p.preco : null }
+  const totalVenda = cultivo.reduce((s, v) => s + (valorVenda(v) || 0), 0)
+
   // ---- indicadores do topo
   const biomassaTotal = cultivo.reduce((s, v) => s + (v.biomassaPrevista || 0), 0)
   const semEstimativa = cultivo.filter((v) => v.biomassaPrevista == null).length
@@ -101,6 +115,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           nota={ativos.length > cultivo.length ? `${ativos.length - cultivo.length} em preparação` : 'nenhum em preparação'} />
         <Kpi titulo="Biomassa estimada" valor={`${fmt(biomassaTotal, 0)} kg`}
           nota={semEstimativa ? `${semEstimativa} viveiro(s) sem estimativa` : 'pela sobrevivência do plano'} />
+        <Kpi titulo="Valor de venda estimado" valor={totalVenda ? reais(totalVenda) : '–'}
+          nota={precoRef != null ? `média das vendas em 90 dias: ${fmt(precoRef, 2)} R$/kg` : 'sem vendas recentes'} />
         <Kpi titulo="Ração hoje" valor={`${fmt(racaoHoje, 0)} kg`} nota={racaoPrev ? `de ${fmt(racaoPrev, 0)} kg previstos (${fmt((racaoHoje / racaoPrev) * 100, 0)}%)` : 'sem plano'} />
         <Kpi titulo="Despesca em 30 dias" valor={`${fmt(kg30, 0)} kg`} nota={em30.length ? `${em30.length} previsão(ões) · ${reais(r30)}` : 'nenhuma prevista'} />
         <Kpi titulo="Ração em estoque" valor={`${fmt(saldoRacao, 0)} kg`} nota={diasRacao != null ? `~${fmt(diasRacao, 0)} dias pelo plano` : '—'} />
@@ -138,13 +154,13 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           <table>
             <thead><tr>
               <th>Viveiro</th><th>Situação</th><th className="n">Dias</th><th className="n">PL</th><th className="n">PL/m²</th>
-              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th>
+              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th>
               <th className="n">Ração consumida</th><th className="n">FCA parcial</th><th className="n">Ração hoje</th><th>Bandejas</th><th className="n">OD</th>
             </tr></thead>
             <tbody>{viveiros.map((v) => {
-              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={12} /></tr>
-              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={12} /></tr>
-              const g = ganho(v), f = fcaParcial(v), a = aguaDe(v), r = retDe(v)
+              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={14} /></tr>
+              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={14} /></tr>
+              const g = ganho(v), f = fcaParcial(v), a = aguaDe(v), r = retDe(v), pr = precoDe(v), vv = valorVenda(v)
               return (
                 <tr key={v.id} className={v.dias >= 110 ? 'critico' : v.dias > 90 ? 'atencao' : ''}>
                   <td><b>{v.codigo}</b></td><td>Em cultivo</td>
@@ -154,6 +170,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                   <td className="n">{g != null ? fmt(g, 2) : '–'}</td>
                   <td className="n">{v.sobrevEst != null ? `${fmt(v.sobrevEst, 0)}%` : '–'}</td>
                   <td className="n">{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : '–'}</td>
+                  <td className="n" title={pr ? `preço da ${pr.fonte}` : ''}>{pr ? <>{fmt(pr.preco, 2)} <small className="fonte">{pr.fonte === 'previsão' ? 'prev.' : 'méd.'}</small></> : '–'}</td>
+                  <td className="n"><b>{vv != null ? reais(vv) : '–'}</b></td>
                   <td className="n">{fmt(v.racaoConsumida, 0)} kg</td>
                   <td className="n">{f != null ? fmt(f, 2) : '–'}</td>
                   <td className="n">{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''}</td>
@@ -162,9 +180,16 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                 </tr>
               )
             })}</tbody>
+            <tfoot><tr>
+              <td><b>Total</b></td><td colSpan={7} />
+              <td className="n"><b>{fmt(biomassaTotal, 0)} kg</b></td><td />
+              <td className="n"><b>{totalVenda ? reais(totalVenda) : '–'}</b></td>
+              <td className="n"><b>{fmt(cultivo.reduce((s, v) => s + (v.racaoConsumida || 0), 0), 0)} kg</b></td><td colSpan={4} />
+            </tr></tfoot>
           </table>
         </div>
-        <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada usa a sobrevivência informada no plano de ração.</p>
+        <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
+          Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>méd.</b> = média das vendas dos últimos 90 dias{precoRef != null ? ` (${fmt(precoRef, 2)} R$/kg)` : ''}.</p>
       </section>
 
       <section className="p-bloco">
