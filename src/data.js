@@ -61,10 +61,11 @@ function cadastroDemo() {
     ['p3', 'Ração crescimento 40% PB 1,2 mm', 'racao', 'kg'], ['p4', 'Ureia', 'fertilizante', 'kg'],
     ['p5', 'Superfosfato triplo', 'fertilizante', 'kg'], ['p6', 'Calcário dolomítico', 'calcario', 'kg'],
     ['p7', 'Cal hidratada', 'calcario', 'kg'], ['p8', 'Probiótico', 'probiotico', 'L'], ['p9', 'Melaço', 'outro', 'L'],
+    ['p10', 'PL Carapitanga', 'pos_larva', 'un'],
   ].map(([id, nome, categoria, unidade]) => ({ id: `demo-${id}`, nome, categoria, unidade, ativo: true,
     ...{ p1: { saldo: 2400, estoque_minimo: 1500 }, p2: { saldo: 850 }, p3: { saldo: 120, estoque_minimo: 100 },
       p4: { saldo: 300 }, p5: { saldo: 0 }, p6: { saldo: 1000 }, p7: { saldo: 40, estoque_minimo: 100 },
-      p8: { saldo: 20 }, p9: { saldo: 0 } }[id] }))
+      p8: { saldo: 20 }, p9: { saldo: 0 }, p10: { saldo: 330000 } }[id] }))
   // plano de exemplo: ~3% da biomassa para os maiores, ração inicial para os novos
   const kgDia = { V01: 84, V02: 6, V03: 48, V04: 50, V05: 68, V06: 76, V07: 6, V08: 120 }
   const planos = ciclos.map((c, i) => {
@@ -75,7 +76,7 @@ function cadastroDemo() {
       sobrevivencia_est: novo ? null : ['V05', 'V06', 'V08'].includes(cod) ? 55 : 70,
       produto_id: novo ? 'demo-p3' : 'demo-p1', lancado_por: 'Gestor (exemplo)' }
   })
-  return { versao: 4, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
+  return { versao: 5, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
     parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] } }
 }
 
@@ -83,7 +84,7 @@ function cadastroDemo() {
 export async function carregarCadastro() {
   let cad = await get('cadastro')
   if (MODO_DEMO) {
-    if (!cad || cad.versao !== 4) { cad = cadastroDemo(); await set('cadastro', cad) }
+    if (!cad || cad.versao !== 5) { cad = cadastroDemo(); await set('cadastro', cad) }
     return cad
   }
   if (navigator.onLine) {

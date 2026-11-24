@@ -43,7 +43,7 @@ create unique index if not exists ux_ciclo_ativo_viveiro
 create table if not exists produtos (
   id         uuid primary key default gen_random_uuid(),
   nome       text not null unique,
-  categoria  text not null check (categoria in ('racao','fertilizante','calcario','probiotico','outro')),
+  categoria  text not null check (categoria in ('racao','pos_larva','fertilizante','calcario','probiotico','outro')), -- pos_larva: unidade 'un' (PL)
   unidade    text not null default 'kg' check (unidade in ('kg','g','L','mL','sc','un')),
   estoque_minimo numeric(12,2),           -- avisa quando o saldo ficar abaixo
   ativo      boolean not null default true,
@@ -162,6 +162,7 @@ create table if not exists povoamentos (
   data          date not null,
   hora          time not null,
   pl_quantidade integer not null check (pl_quantidade > 0),
+  produto_id    uuid references produtos(id),   -- lote de PL do estoque (sai do estoque)
   fornecedor    text,
   estagio       text,                    -- PL10, PL12...
   observacao    text,
@@ -180,24 +181,27 @@ end $$;
 drop trigger if exists tg_povoa_ciclo on povoamentos;
 create trigger tg_povoa_ciclo after insert or update on povoamentos for each row execute function povoa_ciclo();
 
--- Despesca: parcial (ciclo continua) ou total (fecha o ciclo e libera o viveiro).
+-- Despesca: parcial (ciclo continua), total (encerra o ciclo) ou perda_total (encerra sem despesca:
+-- doença, mortalidade; biomassa 0 e motivo obrigatório).
 create table if not exists despescas (
   id            uuid primary key,
   ciclo_id      uuid not null references ciclos(id),
   data          date not null,
   hora          time not null,
-  tipo          text not null check (tipo in ('parcial','total')),
-  biomassa_kg   numeric(12,2) not null check (biomassa_kg > 0),
-  peso_medio_g  numeric(8,3) not null check (peso_medio_g > 0 and peso_medio_g < 100),
-  populacao     integer generated always as (round(biomassa_kg * 1000 / peso_medio_g)) stored,
+  tipo          text not null check (tipo in ('parcial','total','perda_total')),
+  biomassa_kg   numeric(12,2) not null default 0,
+  peso_medio_g  numeric(8,3),
+  populacao     integer generated always as (case when peso_medio_g > 0 then round(biomassa_kg * 1000 / peso_medio_g) else 0 end) stored,
   observacao    text,
   lancado_por   text,
-  criado_em     timestamptz not null default now()
+  criado_em     timestamptz not null default now(),
+  check ((tipo in ('parcial','total') and biomassa_kg > 0 and peso_medio_g > 0 and peso_medio_g < 100)
+      or (tipo = 'perda_total' and biomassa_kg = 0 and length(trim(coalesce(observacao, ''))) > 2))
 );
 create index if not exists ix_desp_ciclo on despescas(ciclo_id);
 create or replace function fecha_ciclo_na_despesca() returns trigger language plpgsql security definer as $$
 begin
-  if new.tipo = 'total' then
+  if new.tipo in ('total','perda_total') then
     update ciclos set status = 'encerrado', data_fim = new.data where id = new.ciclo_id;
   end if;
   return new;
@@ -236,7 +240,7 @@ create index if not exists ix_insumo_ciclo on aplicacoes_insumos(ciclo_id, data)
 
 -- ---------- Estoque de rações e insumos ----------
 -- Entradas (notas recebidas) e ajustes de contagem são lançados pelo gestor.
--- As saídas não são lançadas aqui: saem sozinhas de cada trato (racao.kg),
+-- As saídas não são lançadas aqui: saem sozinhas de cada povoamento (PL), trato (racao.kg),
 -- colocação de bandeja (kg_bandejas — a sobra é descartada) e aplicação de insumo.
 create table if not exists estoque_movimentos (
   id          uuid primary key,
@@ -266,6 +270,7 @@ left join (select produto_id, sum(q) saidas from (
              select produto_id, kg q from racao
              union all select produto_id, kg_bandejas from bandeja_colocacoes
              union all select produto_id, quantidade from aplicacoes_insumos
+             union all select produto_id, pl_quantidade from povoamentos
            ) x where produto_id is not null group by produto_id) s on s.produto_id = p.id;
 
 -- ---------- Resumo por ciclo (painel) ----------

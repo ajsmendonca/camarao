@@ -21,8 +21,14 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    - **Não** criar centro de custo por viveiro. Ração/insumos = consumo do sistema × preço médio das notas;
      pós-larva = direto no ciclo; o resto é custo comum **rateado por hectare × dia** entre os ciclos abertos
      (preparação + cultivo), pela data do lançamento (`vw_ciclo_resumo.hectare_dia`).
-   - **Investimento** e **pós-larva** separados **por centro de custo** próprio (a criar no Apresenta.me, com confirmação);
-     investimento nunca entra no lote.
+   - Centros de custo criados em 24/11/2026, filhos de Fazenda Santo Antonio (765):
+     **Fazenda Santo Antonio – Investimento (1829)** → nunca entra no lote;
+     **Fazenda Santo Antonio – Viveiros (1830)** → custos diretos dos viveiros (ração, insumos, pós-larva), que o sistema
+     distribui pelo consumo/povoamento de cada ciclo. O que ficar no 765 é custo comum, rateado por ha × dia.
+   - **O Apresenta.me não tem itens** (só valor, fornecedor, plano, descrição). Quantidade vem do sistema de produção
+     (entrada de estoque); valor vem do lançamento financeiro → preço médio = Σ valor / Σ quantidade por produto.
+     As notas lançadas pelo **Sistema de Vistos** trazem nas observações a **chave da NF-e** (`[chave=44 dígitos]`), o que
+     permite ler os itens do XML (produto, quantidade, valor) — falta saber onde o Sistema de Vistos guarda o XML.
    - Entrada de estoque deve poder escolher a nota de ração do Apresenta.me (fornecedor/valor/NF → preço médio).
    - O Antônio já tem a chave de API; vai como segredo no Supabase (Edge Function), nunca no app nem no chat.
    - API: `financial.transactions.index` com filtros `business_id`, `cost_center_id`, `type` (debit/credit), include `plan`.
@@ -69,9 +75,12 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   - **Todos os custos rateados entram no ciclo desde o início** (ha × dia de `data_inicio` a `data_fim`), incluindo a preparação.
   - Na preparação o campo pode lançar **insumos, água e ocorrência**; ração, bandejas, biometria, plano e despesca só em cultivo.
   - Dias de cultivo (cartão, alerta >90) contam do povoamento; o cartão em preparação mostra os dias de preparação.
-- **Povoamento (gestor)**, tela "Ciclos e povoamento": PL povoadas, fornecedor, estágio (PL12), data/hora, obs.
+- **Pós-larva no estoque** (categoria `pos_larva`, unidade PL; entrada/contagem digitadas em milheiros): entrada = PL compradas;
+  povoamento escolhe o lote e **sai do estoque**; contagem acerta as diferenças (bônus do laboratório, perdas).
+- **Encerrar sem despesca**: na Despesca, tipo **Perda total** (motivo obrigatório, biomassa 0) encerra o ciclo.
+- **Povoamento (gestor)**, tela "Ciclos e povoamento": PL povoadas, lote de PL do estoque, fornecedor, estágio (PL12), data/hora, obs.
   Ciclo em preparação → passa para em cultivo (trigger no banco); já em cultivo → **complemento** (soma PL).
-  Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem do Apresenta.me.
+  Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem do Apresenta.me (centro 1830).
 - **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
   (população despescada / PL) e FCA (consumida / biomassa). **Sobrevivência >100% bloqueia**. Total **encerra** o ciclo (trigger).
 - **Sobrevivência estimada**: o gestor informa no **Plano de ração** (%). Previsto = PL × sobrev. − já despescado;
@@ -86,7 +95,7 @@ status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, ale
 
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
-povoamentos (+ trigger → em cultivo), despescas (+ trigger → encerrado), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
+povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total; trigger → encerrado), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
