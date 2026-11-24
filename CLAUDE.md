@@ -160,9 +160,12 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
 → No sistema novo: investimento nunca entra no custo do lote; validações impedem sobrevivência >100%, etc.
 
 ## Pendências / perguntas em aberto
-- **Banco real ainda sem ciclos** (24/11/2026): o Antônio precisa iniciar o ciclo e lançar o povoamento de cada viveiro
-  (botão Ciclos). Uma carga automática com os dados do Meu Pescado foi bloqueada pelo controle de permissões — só fazer
-  com confirmação explícita dele (datas de povoamento, PL e pesos reais).
+- **Carga inicial feita em 24/11/2026** (confirmada pelo Antônio), a partir do "Relatório de lotes completo" e do
+  "Relatório de estoques" do Meu Pescado: 8 ciclos em cultivo (início = data do povoamento, preparação desconhecida;
+  `lancado_por`/observação "Carga inicial (Meu Pescado)"), povoamento (V08 400 mil PL, demais 300 mil; V03/V04 vinham
+  num lote só de 600 mil e foram divididos), última biometria de 24/11 (V02 e V07 sem), e 15 produtos com saldo inicial
+  (ajuste "Saldo inicial", preço médio do Meu Pescado na observação). Sobrevivência de 80% do Meu Pescado **não** foi
+  copiada — o Antônio informa a estimativa no plano de ração.
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
