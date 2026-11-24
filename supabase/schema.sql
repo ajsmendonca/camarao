@@ -181,6 +181,37 @@ end $$;
 drop trigger if exists tg_povoa_ciclo on povoamentos;
 create trigger tg_povoa_ciclo after insert or update on povoamentos for each row execute function povoa_ciclo();
 
+-- Clientes (compradores) da Barra Maricultura. Preenchida pela integração com as pessoas que têm lançamentos
+-- da Barra Maricultura no Apresenta.me (apresentame_person_id) e, para comprador novo, pré-cadastro pelo gestor.
+create table if not exists clientes (
+  id                    uuid primary key,
+  nome                  text not null,
+  telefone              text,
+  documento             text,                       -- CPF/CNPJ
+  cidade                text,
+  apresentame_person_id bigint unique,              -- liga ao cadastro do Apresenta.me
+  ativo                 boolean not null default true,
+  criado_em             timestamptz not null default now()
+);
+
+-- Previsão de despesca (pedido de venda): quanto, com que peso, a que preço e para quem.
+create table if not exists previsoes_despesca (
+  id                  uuid primary key,
+  ciclo_id            uuid not null references ciclos(id),
+  cliente_id          uuid references clientes(id),
+  data_prevista       date not null,
+  biomassa_prev_kg    numeric(12,2) not null check (biomassa_prev_kg > 0),
+  peso_medio_prev_g   numeric(8,3) not null check (peso_medio_prev_g > 0 and peso_medio_prev_g < 100),
+  preco_kg_prev       numeric(10,2) check (preco_kg_prev >= 0),
+  valor_prev          numeric(14,2) generated always as (round(biomassa_prev_kg * preco_kg_prev, 2)) stored,
+  status              text not null default 'aberta' check (status in ('aberta','realizada','cancelada')),
+  despesca_id         uuid,                         -- preenchido quando a despesca é lançada a partir da previsão
+  observacao          text,
+  lancado_por         text,
+  criado_em           timestamptz not null default now()
+);
+create index if not exists ix_prev_ciclo on previsoes_despesca(ciclo_id, data_prevista);
+
 -- Despesca: parcial (ciclo continua), total (encerra o ciclo) ou perda_total (encerra sem despesca:
 -- doença, mortalidade; biomassa 0 e motivo obrigatório).
 create table if not exists despescas (
@@ -191,6 +222,7 @@ create table if not exists despescas (
   tipo          text not null check (tipo in ('parcial','total','perda_total')),
   biomassa_kg   numeric(12,2) not null default 0,
   peso_medio_g  numeric(8,3),
+  previsao_id   uuid references previsoes_despesca(id),  -- previsão/pedido que esta despesca realizou
   populacao     integer generated always as (case when peso_medio_g > 0 then round(biomassa_kg * 1000 / peso_medio_g) else 0 end) stored,
   observacao    text,
   lancado_por   text,
@@ -203,6 +235,12 @@ create or replace function fecha_ciclo_na_despesca() returns trigger language pl
 begin
   if new.tipo in ('total','perda_total') then
     update ciclos set status = 'encerrado', data_fim = new.data where id = new.ciclo_id;
+    -- previsões ainda abertas do ciclo encerrado ficam canceladas
+    update previsoes_despesca set status = 'cancelada' where ciclo_id = new.ciclo_id and status = 'aberta'
+       and id is distinct from new.previsao_id;
+  end if;
+  if new.previsao_id is not null then
+    update previsoes_despesca set status = 'realizada', despesca_id = new.id where id = new.previsao_id;
   end if;
   return new;
 end $$;
@@ -337,6 +375,8 @@ alter table ocorrencias  enable row level security;
 alter table estoque_movimentos enable row level security;
 alter table povoamentos  enable row level security;
 alter table despescas    enable row level security;
+alter table clientes     enable row level security;
+alter table previsoes_despesca enable row level security;
 
 do $$
 declare t text;
@@ -384,6 +424,16 @@ begin
     execute format('create policy "%1$s_gestor" on %1$I for insert to authenticated with check (eh_gestor())', t);
     execute format('drop policy if exists "%1$s_gestor_upd" on %1$I', t);
     execute format('create policy "%1$s_gestor_upd" on %1$I for update to authenticated using (eh_gestor()) with check (eh_gestor())', t);
+  end loop;
+end $$;
+
+-- Clientes e previsões de despesca (têm preço): só o gestor lê e grava
+do $$
+declare t text;
+begin
+  foreach t in array array['clientes','previsoes_despesca'] loop
+    execute format('drop policy if exists "%1$s_gestor_all" on %1$I', t);
+    execute format('create policy "%1$s_gestor_all" on %1$I for all to authenticated using (eh_gestor()) with check (eh_gestor())', t);
   end loop;
 end $$;
 

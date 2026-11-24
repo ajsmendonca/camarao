@@ -5,7 +5,7 @@ App de celular (PWA, funciona offline) para o campo e o gestor.
 **Estoque:** rações e insumos têm saldo. O gestor lança as entradas (notas) e as contagens; o consumo sai sozinho
 a cada trato, bandeja e insumo lançado. No campo só aparecem os produtos que têm estoque.
 
-**Gestor:** inicia o ciclo (viveiro em preparação), lança o povoamento (em cultivo) e a despesca (sobrevivência real e FCA), e define o plano de ração
+**Gestor:** inicia o ciclo (viveiro em preparação), lança o povoamento (em cultivo), as previsões de despesca (pedidos de venda, com cliente e preço) e a despesca (sobrevivência real e FCA), e define o plano de ração
 por viveiro (kg/dia, sobrevivência estimada, ração, divisão por trato, recado), vigente a partir de uma data.
 
 **Campo** registra:

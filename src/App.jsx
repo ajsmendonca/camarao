@@ -29,6 +29,7 @@ const PARAMS = {
   salinidade: { rotulo: 'Salinidade (ppt)', min: 0, max: 60 },
   transparencia: { rotulo: 'Transparência (cm)', min: 0, max: 300 },
 }
+const reais = (n) => n == null ? '–' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const mil = (n) => n >= 1e6 ? `${fmt(n / 1e6, 2)} mi` : `${fmt(n / 1000, 0)} mil`
 const minDesde = (data, hora) => Math.round((Date.now() - new Date(`${data}T${hora}:00`)) / 60000)
 const duracao = (m) => m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`
@@ -42,7 +43,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -96,6 +97,23 @@ export default function App() {
       const primeira = [c.data_povoamento, ...povs].filter(Boolean).sort()[0]
       return { ...c, status: 'em_cultivo', data_povoamento: primeira }
     })
+  }, [cad, lanc])
+
+  const clientes = useMemo(() => {
+    if (!cad) return []
+    const base = cad.clientes || []
+    return [...base, ...lanc.filter((l) => l.tipo === 'cliente' && !base.some((c) => c.id === l.id)).map((l) => ({ id: l.id, ...l.dados }))]
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [cad, lanc])
+  // previsões abertas: servidor + lançadas/alteradas aqui (a mais recente de cada id vale)
+  const previsoes = useMemo(() => {
+    if (!cad) return []
+    const mapa = new Map((cad.previsoes || []).map((p) => [p.id, p]))
+    ;[...lanc].filter((l) => l.tipo === 'previsao').sort((a, b) => a.criado_em.localeCompare(b.criado_em))
+      .forEach((l) => { const id = l.dados.id || l.id; mapa.set(id, { ...mapa.get(id), ...l.dados, id }) })
+    const realizadas = new Set(lanc.filter((l) => l.tipo === 'despesca' && l.dados.previsao_id).map((l) => l.dados.previsao_id))
+    return [...mapa.values()].filter((p) => p.status === 'aberta' && !realizadas.has(p.id))
+      .sort((a, b) => a.data_prevista.localeCompare(b.data_prevista))
   }, [cad, lanc])
 
   const viveiros = useMemo(() => {
@@ -167,9 +185,10 @@ export default function App() {
       r.sobrevEst = plano?.sobrevivencia_est ?? null
       r.popPrevista = r.sobrevEst && r.pl ? Math.max(0, Math.round(r.pl * r.sobrevEst / 100) - r.popDespescada) : null
       r.biomassaPrevista = r.popPrevista != null && r.ultimaBio ? r.popPrevista * r.ultimaBio.peso_medio_g / 1000 : null
+      r.previsoes = previsoes.filter((p) => p.ciclo_id === ciclo.id)
       return r
     })
-  }, [cad, lanc, ciclos])
+  }, [cad, lanc, ciclos, previsoes])
 
   const pendentes = lanc.filter((l) => !l.sincronizado).length
   // saldo de estoque = saldo do servidor (até o último carregamento) + o que este aparelho lançou depois
@@ -240,13 +259,13 @@ export default function App() {
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
         {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar} />}
-        {tela === 'despesca' && gestor && <FormDespesca viveiros={viveiros} onSalvar={salvar} />}
+        {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'agua' && <FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} />}
         {tela === 'ocorrencia' && <FormOcorrencia viveiros={viveiros} onSalvar={salvar} />}
-        {tela === 'envios' && <Envios lanc={lanc} viveiros={viveiros} ciclos={ciclos} produtos={produtos} online={online} onSync={sync}
+        {tela === 'envios' && <Envios lanc={lanc} viveiros={viveiros} ciclos={ciclos} produtos={produtos} clientes={clientes} online={online} onSync={sync}
           onExcluir={async (id) => { await excluirLancamento(id); recarregar() }}
           onTrocarOperador={async () => { await setOperador(''); setOp(null) }}
           onResetDemo={async () => { await resetarDemo(); setCad(await carregarCadastro()); recarregar() }} />}
@@ -345,6 +364,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
                     <i key={i} className={v.tratosHoje.includes(i + 1) ? 'feito' : ''}>{i + 1}</i>
                   ))}
                 </div>
+                {gestor && v.previsoes[0] && <div className="linha"><span>Despesca prev.</span><b className="aguardando">{dataBR(v.previsoes[0].data_prevista).slice(0, 5)} · {fmt(v.previsoes.reduce((s, p) => s + p.biomassa_prev_kg, 0), 0)} kg</b></div>}
                 {v.dias > 90 && <div className="tag">Passou de 90 dias</div>}
               </>
             ) : gestor
@@ -906,12 +926,14 @@ function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
 }
 
 // ---------- Lançamentos / envio ----------
-function Envios({ lanc, viveiros, ciclos, produtos, online, onSync, onExcluir, onTrocarOperador, onResetDemo }) {
+function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, onExcluir, onTrocarOperador, onResetDemo }) {
   const [enviando, setEnviando] = useState(false)
   const nomeViveiro = (cid) => viveiros.find((v) => v.id === ciclos.find((c) => c.id === cid)?.viveiro_id)?.codigo || '?'
   const resumo = (l) => {
     const d = l.dados
     if (l.tipo === 'estoque') { const pr = produtos.find((x) => x.id === d.produto_id); return `${d.tipo === 'entrada' ? 'entrada' : 'ajuste'} ${d.quantidade > 0 ? '+' : '−'}${qtdProd(pr, Math.abs(d.quantidade))}${d.documento ? ` · ${d.documento}` : ''}` }
+    if (l.tipo === 'cliente') return d.telefone || 'pré-cadastro'
+    if (l.tipo === 'previsao') return d.status === 'cancelada' ? 'cancelada' : `${dataBR(d.data_prevista)} · ${fmt(d.biomassa_prev_kg, 0)} kg · ${fmt(d.peso_medio_prev_g, 1)} g${d.cliente_id ? ` · ${clientes.find((c) => c.id === d.cliente_id)?.nome || ''}` : ''}`
     if (l.tipo === 'ciclo') return `início ${dataBR(d.data_inicio)} · em preparação`
     if (l.tipo === 'povoamento') return `${mil(d.pl_quantidade)} PL${d.estagio ? ` ${d.estagio}` : ''}${d.fornecedor ? ` · ${d.fornecedor}` : ''}`
     if (l.tipo === 'despesca') return d.tipo === 'perda_total' ? `perda total · ${d.observacao}` : `${d.tipo} · ${fmt(d.biomassa_kg, 0)} kg · ${fmt(d.peso_medio_g, 1)} g`
@@ -939,8 +961,8 @@ function Envios({ lanc, viveiros, ciclos, produtos, online, onSync, onExcluir, o
         {lanc.length === 0 && <li className="vazio">Nenhum lançamento ainda.</li>}
         {lanc.map((l) => (
           <li key={l.id}>
-            <span className={`ic ${l.tipo}`}>{{ ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
-            <div><b>{l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : l.tipo === 'ciclo' ? `${viveiros.find((v) => v.id === l.dados.viveiro_id)?.codigo || '?'} · Início de ciclo` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
+            <span className={`ic ${l.tipo}`}>{{ cliente: '👤', previsao: '📅', ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
+            <div><b>{l.tipo === 'cliente' ? `Novo cliente · ${l.dados.nome}` : l.tipo === 'previsao' ? `${nomeViveiro(l.dados.ciclo_id)} · Previsão de despesca` : l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : l.tipo === 'ciclo' ? `${viveiros.find((v) => v.id === l.dados.viveiro_id)?.codigo || '?'} · Início de ciclo` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
               <small>{l.tipo === 'ciclo' ? resumo(l) : <>{l.dados.data ? `${dataBR(l.dados.data)}${l.dados.hora ? ` ${l.dados.hora}` : ''}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</>}</small></div>
             {l.sincronizado ? <em className="ok">✓</em>
               : <button className="excluir" onClick={() => onExcluir(l.id)} aria-label="Excluir">Excluir</button>}
@@ -1185,8 +1207,9 @@ function FormPovoamento({ v, pls, fornecedores, onSalvar }) {
 }
 
 // ---------- Despesca (gestor): parcial ou total; total fecha o ciclo ----------
-function FormDespesca({ viveiros, onSalvar }) {
-  const [vid, setVid] = useState(null)
+function FormDespesca({ viveiros, clientes, inicial, onSalvar }) {
+  const [vid, setVid] = useState(inicial?.vid || null)
+  const [previsao, setPrevisao] = useState(inicial?.previsaoId || null)
   const [tipo, setTipo] = useState('total')
   const [data, setData] = useState(hoje())
   const [hora, setHora] = useState(agora())
@@ -1194,7 +1217,11 @@ function FormDespesca({ viveiros, onSalvar }) {
   const [peso, setPeso] = useState('')
   const [obs, setObs] = useState('')
   const v = viveiros.find((x) => x.id === vid)
-  useEffect(() => { setPeso(v?.ultimaBio ? String(Math.round(v.ultimaBio.peso_medio_g * 10) / 10).replace('.', ',') : '') }, [vid]) // eslint-disable-line
+  const prev = v?.previsoes.find((x) => x.id === previsao) || null
+  useEffect(() => {
+    if (prev) { setBio(String(prev.biomassa_prev_kg).replace('.', ',')); setPeso(String(prev.peso_medio_prev_g).replace('.', ',')); return }
+    setPeso(v?.ultimaBio ? String(Math.round(v.ultimaBio.peso_medio_g * 10) / 10).replace('.', ',') : '')
+  }, [vid, previsao]) // eslint-disable-line
   const perda = tipo === 'perda_total'
   const b = num(bio), p = num(peso)
   const pop = !perda && b > 0 && p > 0 ? Math.round(b * 1000 / p) : null
@@ -1209,6 +1236,8 @@ function FormDespesca({ viveiros, onSalvar }) {
   if (p > 0 && v?.ultimaBio && Math.abs(p - v.ultimaBio.peso_medio_g) / v.ultimaBio.peso_medio_g > 0.3)
     alertas.push(`Peso médio bem diferente da última biometria (${fmt(v.ultimaBio.peso_medio_g, 2)} g).`)
   if (p > 45) alertas.push('Peso médio acima de 45 g — confira se está em gramas.')
+  if (prev && b > 0 && Math.abs(b - prev.biomassa_prev_kg) / prev.biomassa_prev_kg > 0.2)
+    alertas.push(`${fmt(b, 0)} kg é bem diferente do previsto (${fmt(prev.biomassa_prev_kg, 0)} kg).`)
   if (tipo === 'total' && v && !impossivel) alertas.push(`Despesca total encerra o ciclo do ${v.codigo} e libera o viveiro para novo ciclo.`)
   if (perda && v) {
     alertas.length = 0
@@ -1216,8 +1245,21 @@ function FormDespesca({ viveiros, onSalvar }) {
   }
   return (
     <div className="form">
-      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} />
+      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={(id) => { setVid(id); setPrevisao(null) }} />
       {v && (<>
+        {v.previsoes.length > 0 && tipo !== 'perda_total' && (
+          <fieldset className="campo"><legend>Previsão / pedido</legend>
+            <div className="lista-opcoes">
+              {v.previsoes.map((x) => (
+                <button key={x.id} type="button" className={previsao === x.id ? 'sel' : ''} onClick={() => setPrevisao(previsao === x.id ? null : x.id)}>
+                  <span className="nome-prod">{dataBR(x.data_prevista).slice(0, 5)} · {clientes.find((c) => c.id === x.cliente_id)?.nome || 'sem cliente'}</span>
+                  <small className="saldo">{fmt(x.biomassa_prev_kg, 0)} kg · {fmt(x.peso_medio_prev_g, 1)} g</small>
+                </button>
+              ))}
+              <button type="button" className={previsao === null ? 'sel' : ''} onClick={() => setPrevisao(null)}>Sem previsão</button>
+            </div>
+          </fieldset>
+        )}
         <div className="contexto">
           <div><span>Cultivo</span><b>{v.dias} dias</b></div>
           <div><span>Povoado</span><b>{v.pl ? mil(v.pl) : '—'}</b></div>
@@ -1245,7 +1287,159 @@ function FormDespesca({ viveiros, onSalvar }) {
       {v && <Salvar pronto={hora && (perda ? obs.trim().length > 2 : b > 0 && p > 0 && p < 100 && !impossivel)} alertas={alertas}
         onSalvar={() => onSalvar('despesca', perda
           ? { ciclo_id: v.ciclo.id, data, hora, tipo, biomassa_kg: 0, peso_medio_g: null, observacao: obs.trim() }
-          : { ciclo_id: v.ciclo.id, data, hora, tipo, biomassa_kg: b, peso_medio_g: p, observacao: obs.trim() || null })} />}
+          : { ciclo_id: v.ciclo.id, data, hora, tipo, biomassa_kg: b, peso_medio_g: p, previsao_id: previsao, observacao: obs.trim() || null })} />}
     </div>
   )
+}
+
+// ---------- Despesca: previsões (pedidos de venda) e lançamento ----------
+function TelaDespesca({ viveiros, clientes, previsoes, onSalvar }) {
+  const [aba, setAba] = useState(previsoes.length ? 'previsoes' : 'despesca')
+  const [inicial, setInicial] = useState(null)       // previsão escolhida para lançar a despesca
+  const [nova, setNova] = useState(false)
+  const salvar = async (tipo, dados, extra) => { await onSalvar(tipo, dados, extra, 'despesca'); setNova(false); setInicial(null); setAba('previsoes') }
+  return (
+    <div className="form">
+      <Alternar opcoes={[['previsoes', `Previsões${previsoes.length ? ` (${previsoes.length})` : ''}`], ['despesca', 'Lançar despesca']]} valor={aba}
+        onChange={(a) => { setAba(a); setNova(false); if (a === 'previsoes') setInicial(null) }} />
+      {aba === 'previsoes' && (nova
+        ? <FormPrevisao viveiros={viveiros} clientes={clientes} onSalvar={salvar} />
+        : <ListaPrevisoes previsoes={previsoes} viveiros={viveiros} clientes={clientes} onNova={() => setNova(true)}
+            onLancar={(p) => { setInicial({ vid: viveiros.find((v) => v.ciclo?.id === p.ciclo_id)?.id, previsaoId: p.id }); setAba('despesca') }}
+            onCancelar={(p) => { const d = { ...p, status: 'cancelada' }; delete d.valor_prev; delete d.criado_em; salvar('previsao', d) }} />)}
+      {aba === 'despesca' && <FormDespesca key={inicial?.previsaoId || 'nova'} viveiros={viveiros} clientes={clientes} inicial={inicial}
+        onSalvar={(t, d) => onSalvar(t, d, null, 'inicio')} />}
+    </div>
+  )
+}
+
+function ListaPrevisoes({ previsoes, viveiros, clientes, onNova, onLancar, onCancelar }) {
+  const [cancelar, setCancelar] = useState(null)
+  const totKg = previsoes.reduce((s, p) => s + p.biomassa_prev_kg, 0)
+  const totR = previsoes.reduce((s, p) => s + (p.preco_kg_prev != null ? p.biomassa_prev_kg * p.preco_kg_prev : 0), 0)
+  const viv = (p) => viveiros.find((v) => v.ciclo?.id === p.ciclo_id)
+  return (<>
+    {previsoes.length > 0 && (
+      <div className="resultado"><span>Previsto</span><b>{fmt(totKg, 0)} kg</b><small>{previsoes.length} previsão(ões) · {reais(totR)}</small></div>
+    )}
+    <ul className="previsoes">
+      {previsoes.length === 0 && <li className="vazio">Nenhuma despesca prevista.</li>}
+      {previsoes.map((p) => {
+        const v = viv(p)
+        const diasAte = diasEntre(hoje(), p.data_prevista)
+        const diasCult = v?.ciclo?.data_povoamento ? diasEntre(v.ciclo.data_povoamento, p.data_prevista) : null
+        return (
+          <li key={p.id} className={diasAte < 0 ? 'atrasada' : ''}>
+            <div className="prev-topo"><b>{v?.codigo || '?'}</b>
+              <span>{dataBR(p.data_prevista)} · {diasAte === 0 ? 'hoje' : diasAte > 0 ? `em ${diasAte} dia(s)` : `atrasada ${-diasAte} dia(s)`}</span></div>
+            <div className="prev-cliente">{clientes.find((c) => c.id === p.cliente_id)?.nome || 'Sem cliente definido'}</div>
+            <div className="prev-nums">
+              <div><span>Quantidade</span><b>{fmt(p.biomassa_prev_kg, 0)} kg</b></div>
+              <div><span>Peso médio</span><b>{fmt(p.peso_medio_prev_g, 1)} g</b></div>
+              <div><span>Preço</span><b>{p.preco_kg_prev != null ? `${reais(p.preco_kg_prev)}/kg` : '–'}</b></div>
+              <div><span>Valor</span><b>{p.preco_kg_prev != null ? reais(p.biomassa_prev_kg * p.preco_kg_prev) : '–'}</b></div>
+            </div>
+            {diasCult != null && <small>{diasCult} dias de cultivo na data{diasCult >= 110 ? ' — acima de 110 dias' : ''}</small>}
+            <div className="prev-acoes">
+              <button type="button" className="primario" onClick={() => onLancar(p)}>Lançar despesca</button>
+              <button type="button" className="excluir" onClick={() => (cancelar === p.id ? onCancelar(p) : setCancelar(p.id))}>
+                {cancelar === p.id ? 'Confirmar cancelamento' : 'Cancelar'}</button>
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+    <button type="button" className="primario" onClick={onNova}>+ Nova previsão de despesca</button>
+  </>)
+}
+
+function FormPrevisao({ viveiros, clientes, onSalvar }) {
+  const [vid, setVid] = useState(null)
+  const [cliente, setCliente] = useState(null)
+  const [novoCli, setNovoCli] = useState(false)
+  const [nomeCli, setNomeCli] = useState('')
+  const [telCli, setTelCli] = useState('')
+  const [busca, setBusca] = useState('')
+  const [data, setData] = useState(hoje())
+  const [kg, setKg] = useState('')
+  const [peso, setPeso] = useState('')
+  const [preco, setPreco] = useState('')
+  const [obs, setObs] = useState('')
+  const v = viveiros.find((x) => x.id === vid)
+  const jaPrevisto = v ? v.previsoes.reduce((s, p) => s + p.biomassa_prev_kg, 0) : 0
+  useEffect(() => {
+    if (!v) return
+    const sugest = v.biomassaPrevista != null ? Math.max(0, Math.round((v.biomassaPrevista - jaPrevisto) / 10) * 10) : null
+    setKg(sugest ? String(sugest) : '')
+    setPeso(v.ultimaBio ? String(Math.round(v.ultimaBio.peso_medio_g * 10) / 10).replace('.', ',') : '')
+  }, [vid]) // eslint-disable-line
+  const k = num(kg), g = num(peso), r = num(preco)
+  const diasCult = v?.ciclo?.data_povoamento ? diasEntre(v.ciclo.data_povoamento, data) : null
+  const lista = clientes.filter((c) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()))
+  const nomeNovo = nomeCli.trim().replace(/\s+/g, ' ')
+  const repetido = clientes.some((c) => c.nome.toLowerCase() === nomeNovo.toLowerCase())
+  const alertas = []
+  if (v && k > 0 && v.biomassaPrevista != null && k + jaPrevisto > v.biomassaPrevista * 1.1)
+    alertas.push(`Acima da biomassa estimada do ${v.codigo} (${fmt(v.biomassaPrevista, 0)} kg${jaPrevisto ? `, já previsto ${fmt(jaPrevisto, 0)} kg` : ''}).`)
+  if (diasCult != null && diasCult >= 110) alertas.push(`Na data o ${v.codigo} terá ${diasCult} dias de cultivo — as despescas com 110 dias ou mais foram quase todas negativas.`)
+  if (g > 0 && v?.ultimaBio && g < v.ultimaBio.peso_medio_g * 0.95) alertas.push(`Peso previsto menor que a última biometria (${fmt(v.ultimaBio.peso_medio_g, 2)} g).`)
+  if (g > 45) alertas.push('Peso médio acima de 45 g — confira se está em gramas.')
+  if (v && !cliente && !(novoCli && nomeNovo.length >= 2)) alertas.push('Sem cliente definido.')
+  if (v && preco === '') alertas.push('Sem preço por kg: o valor previsto fica em branco.')
+  const pronto = v && data && k > 0 && g > 0 && g < 100 && !Number.isNaN(r) && !(novoCli && (nomeNovo.length < 2 || repetido))
+  const salvar = () => {
+    const base = { ciclo_id: v.ciclo.id, data_prevista: data, biomassa_prev_kg: k, peso_medio_prev_g: g,
+      preco_kg_prev: r == null ? null : r, status: 'aberta', observacao: obs.trim() || null }
+    if (novoCli) {
+      const cid = uuid()
+      return onSalvar('previsao', null, [
+        { tipo: 'cliente', id: cid, dados: { nome: nomeNovo, telefone: telCli.trim() || null } },
+        { tipo: 'previsao', dados: { ...base, cliente_id: cid } },
+      ])
+    }
+    return onSalvar('previsao', { ...base, cliente_id: cliente })
+  }
+  return (<>
+    <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} />
+    {v && (<>
+      <div className="contexto">
+        <div><span>Cultivo hoje</span><b>{v.dias} dias</b></div>
+        <div><span>Peso atual</span><b>{v.ultimaBio ? `${fmt(v.ultimaBio.peso_medio_g, 2)} g` : '–'}</b></div>
+        <div><span>Biomassa est.</span><b>{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : '–'}</b></div>
+        {jaPrevisto > 0 && <small>Já previsto para este viveiro: {fmt(jaPrevisto, 0)} kg</small>}
+        {v.biomassaPrevista == null && <small>Sem biomassa estimada: informe a sobrevivência no plano de ração.</small>}
+      </div>
+      <fieldset className="campo"><legend>Cliente</legend>
+        {!novoCli && clientes.length > 8 && <input className="busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar cliente" />}
+        {!novoCli && (
+          <div className="lista-opcoes">
+            {lista.slice(0, 12).map((c) => (
+              <button key={c.id} type="button" className={cliente === c.id ? 'sel' : ''} onClick={() => setCliente(cliente === c.id ? null : c.id)}>
+                <span className="nome-prod">{c.nome}</span>{c.telefone && <small className="saldo">{c.telefone}</small>}</button>
+            ))}
+          </div>
+        )}
+        {novoCli ? (<>
+          <input value={nomeCli} onChange={(e) => setNomeCli(e.target.value)} placeholder="Nome do cliente" />
+          {repetido && <p className="dica esq aviso-sem-plano">Já existe um cliente com esse nome.</p>}
+          <input value={telCli} onChange={(e) => setTelCli(e.target.value)} placeholder="Telefone (opcional)" inputMode="tel" />
+          <button type="button" className="mais" onClick={() => setNovoCli(false)}>Escolher cliente da lista</button>
+        </>) : <button type="button" className="mais" onClick={() => { setNovoCli(true); setCliente(null) }}>+ Cliente novo</button>}
+      </fieldset>
+      <label className="campo"><span>Data prevista</span>
+        <input type="date" value={data} min={hoje()} onChange={(e) => setData(e.target.value)} /></label>
+      <div className="duas">
+        <CampoNum rotulo="Quantidade prevista" valor={kg} onChange={setKg} sufixo="kg" />
+        <CampoNum rotulo="Peso médio previsto" valor={peso} onChange={setPeso} sufixo="g" />
+      </div>
+      <CampoNum rotulo="Preço previsto" valor={preco} onChange={setPreco} sufixo="R$/kg" />
+      {k > 0 && (
+        <div className="resultado"><span>Valor previsto</span><b>{r > 0 ? reais(k * r) : '–'}</b>
+          <small>{g > 0 ? `${mil(Math.round(k * 1000 / g))} camarões · ` : ''}{diasCult != null ? `${diasCult} dias de cultivo na data` : ''}</small></div>
+      )}
+      <label className="campo"><span>Observação</span>
+        <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Condições, classificação, frete…" /></label>
+    </>)}
+    {v && <Salvar pronto={pronto} alertas={alertas} onSalvar={salvar} />}
+  </>)
 }

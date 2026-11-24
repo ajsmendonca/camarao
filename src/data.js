@@ -14,7 +14,7 @@ const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = URL && KEY ? createClient(URL, KEY) : null
 export const MODO_DEMO = !supabase
 
-const TABELA = { ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
+const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
 
 export const hoje = () => {
   const d = new Date()
@@ -76,7 +76,10 @@ function cadastroDemo() {
       sobrevivencia_est: novo ? null : ['V05', 'V06', 'V08'].includes(cod) ? 55 : 70,
       produto_id: novo ? 'demo-p3' : 'demo-p1', lancado_por: 'Gestor (exemplo)' }
   })
-  return { versao: 5, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
+  const clientes = [{ id: 'demo-cl1', nome: 'Comprador A (exemplo)', telefone: null }, { id: 'demo-cl2', nome: 'Comprador B (exemplo)', telefone: null }]
+  const previsoes = [{ id: 'demo-pv1', ciclo_id: 'demo-c8', cliente_id: 'demo-cl1', data_prevista: diasAtras(-5), biomassa_prev_kg: 2500,
+    peso_medio_prev_g: 13.5, preco_kg_prev: 28, status: 'aberta', observacao: null }]
+  return { versao: 6, clientes, previsoes, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
     parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] } }
 }
 
@@ -84,7 +87,7 @@ function cadastroDemo() {
 export async function carregarCadastro() {
   let cad = await get('cadastro')
   if (MODO_DEMO) {
-    if (!cad || cad.versao !== 5) { cad = cadastroDemo(); await set('cadastro', cad) }
+    if (!cad || cad.versao !== 6) { cad = cadastroDemo(); await set('cadastro', cad) }
     return cad
   }
   if (navigator.onLine) {
@@ -93,7 +96,7 @@ export async function carregarCadastro() {
       const desde = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10)
       const { data: sess } = await supabase.auth.getSession()
       const uid = sess.session?.user?.id
-      const [v, c, cfg, b, col, prod, pl, pf, bc, fo] = await Promise.all([
+      const [v, c, cfg, b, col, prod, pl, pf, bc, fo, cl, pv] = await Promise.all([
         supabase.from('viveiros').select('*').eq('ativo', true).order('codigo'),
         supabase.from('ciclos').select('*').in('status', ['preparacao', 'em_cultivo']),
         supabase.from('configuracoes').select('*'),
@@ -107,6 +110,9 @@ export async function carregarCadastro() {
         supabase.from('biometrias').select('ciclo_id, data, hora, classes').eq('tipo', 'classes')
           .order('data', { ascending: false }).order('hora', { ascending: false }).limit(200),
         supabase.from('povoamentos').select('fornecedor').order('data', { ascending: false }).limit(200),
+        // clientes e previsões de despesca: só o gestor enxerga (RLS); para o campo voltam vazios
+        supabase.from('clientes').select('id, nome, telefone').eq('ativo', true).order('nome'),
+        supabase.from('previsoes_despesca').select('*').eq('status', 'aberta').order('data_prevista'),
       ])
       if (v.error || c.error) throw v.error || c.error
       const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] }
@@ -117,6 +123,9 @@ export async function carregarCadastro() {
         resumos: Object.fromEntries((b.data || []).map((r) => [r.ciclo_id, {
           pl_quantidade: Number(r.pl_quantidade), racao_consumida_kg: Number(r.racao_consumida_kg),
           populacao_despescada: Number(r.populacao_despescada), biomassa_despescada_kg: Number(r.biomassa_despescada_kg) }])),
+        clientes: cl.data || [],
+        previsoes: (pv.data || []).map((r) => ({ ...r, biomassa_prev_kg: Number(r.biomassa_prev_kg), peso_medio_prev_g: Number(r.peso_medio_prev_g),
+          preco_kg_prev: r.preco_kg_prev == null ? null : Number(r.preco_kg_prev) })),
         fornecedores: [...new Set((fo.data || []).map((r) => r.fornecedor).filter(Boolean))],
         biometrias: (b.data || []).filter((r) => r.ultimo_peso_g)
           .map((r) => ({ ciclo_id: r.ciclo_id, data: r.ultima_biometria, peso_medio_g: Number(r.ultimo_peso_g) })),
@@ -133,7 +142,7 @@ export async function carregarCadastro() {
       await set('cadastro', cad)
     } catch (e) { console.warn('Sem acesso ao servidor, usando cadastro salvo', e) }
   }
-  return cad || { viveiros: [], ciclos: [], resumos: {}, fornecedores: [], biometrias: [], colocacoes: [], produtos: [], planos: [], perfil: 'campo', config: { tratos_por_dia: 4, parametros_agua: [] } }
+  return cad || { viveiros: [], ciclos: [], resumos: {}, fornecedores: [], clientes: [], previsoes: [], biometrias: [], colocacoes: [], produtos: [], planos: [], perfil: 'campo', config: { tratos_por_dia: 4, parametros_agua: [] } }
 }
 
 // ---------- Lançamentos ----------
@@ -168,7 +177,7 @@ export async function sincronizar() {
       if (MODO_DEMO) { await new Promise((r) => setTimeout(r, 120)) }
       else {
         const dados = { id: item.id, ...item.dados }
-        if (item.tipo === 'produto' || item.tipo === 'ciclo') delete dados.lancado_por
+        if (['produto', 'ciclo', 'cliente'].includes(item.tipo)) delete dados.lancado_por
         const { error } = await supabase.from(TABELA[item.tipo]).upsert(dados, { onConflict: 'id' })
         if (error) { erro = error.message; break }
       }

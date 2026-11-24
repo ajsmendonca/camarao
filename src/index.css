@@ -220,3 +220,21 @@ section .secao { margin-top: 6px; }
   background: var(--branco); border: 1px solid var(--linha); color: var(--cinza); }
 .etapas li.feita { background: var(--areia); }
 .etapas li.atual { background: var(--mar); border-color: var(--mar); color: #fff; }
+
+/* v10: previsões de despesca */
+.previsoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.previsoes li { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--branco);
+  border: 1px solid var(--linha); border-left: 5px solid var(--camarao); }
+.previsoes li.vazio { border-left-color: var(--linha); color: var(--cinza); text-align: center; }
+.previsoes li.atrasada { border-left-color: var(--erro); }
+.prev-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.prev-topo b { font-size: 20px; color: var(--mar); } .prev-topo span { font-size: 13px; color: var(--cinza); }
+.previsoes li.atrasada .prev-topo span { color: var(--erro); font-weight: 700; }
+.prev-cliente { font-weight: 700; }
+.prev-nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; }
+.prev-nums div { display: flex; flex-direction: column; } .prev-nums span { font-size: 12px; color: var(--cinza); }
+.prev-nums b { font-size: 16px; color: var(--mar); }
+.previsoes small { color: var(--cinza); }
+.prev-acoes { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.prev-acoes .primario { min-height: 46px; font-size: 16px; }
+.campo input.busca, .campo > input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--linha); background: var(--branco); font-size: 17px; }

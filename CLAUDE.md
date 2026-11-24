@@ -38,6 +38,15 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    - Entrada de estoque deve poder escolher a nota do Apresenta.me (fornecedor/valor/NF → preço médio); se a nota
      tiver vários produtos, o gestor divide o valor (sugestão proporcional à quantidade).
    - O Antônio prefere controlar pelo Apresenta.me (não depender do XML do Sistema de Vistos).
+   - **Receita / venda** (decidido em 24/11/2026): a **despesca é lançada no sistema do camarão**; a venda é lançada no
+     Apresenta.me pelo escritório como receita da Barra Maricultura, plano **RECEITAS › RECEITA › Venda de camarão (16939)**
+     (criado em 24/11/2026), com o cliente. O gestor liga a(s) receita(s) à despesca (uma despesca pode ter várias vendas)
+     → preço médio/kg, receita e resultado do ciclo. Em 24/11/2026 **não havia nenhuma receita** da Barra Maricultura no
+     Apresenta.me (as vendas estavam só no Meu Pescado).
+   - **Fornecedores e clientes**: sem cadastro próprio completo. Vêm do Apresenta.me, **só as pessoas com lançamentos da
+     Barra Maricultura** (o cadastro de pessoas é compartilhado com as outras empresas do Antônio). Fornecedor vem da nota
+     ligada à entrada de estoque. Exceção: tabela `clientes` local (para previsões de despesca), alimentada pela integração
+     (`apresentame_person_id`) e por **pré-cadastro** do gestor para comprador novo (nome, telefone).
    - O Antônio já tem a chave de API; vai como segredo no Supabase (Edge Function), nunca no app nem no chat.
    - API: `financial.transactions.index` com filtros `business_id`, `cost_center_id`, `type` (debit/credit), include `plan`.
 
@@ -91,6 +100,13 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem da nota no Apresenta.me (plano Larva do Camarão) ligada à entrada de estoque.
 - **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
   (população despescada / PL) e FCA (consumida / biomassa). **Sobrevivência >100% bloqueia**. Total **encerra** o ciclo (trigger).
+- **Previsão de despesca** (pedido de venda; gestor; tela Despesca › Previsões): viveiro, cliente (da lista ou novo),
+  data prevista, quantidade (kg), peso médio previsto (g), preço/kg → valor previsto e nº de camarões.
+  Sugere kg = biomassa estimada − já previsto; avisa se passar da biomassa estimada, se a data der ≥110 dias de cultivo,
+  peso menor que a última biometria, sem cliente ou sem preço. Lista com total previsto (kg e R$), atrasadas em vermelho,
+  "Lançar despesca" (preenche kg e peso e liga `previsao_id`) e "Cancelar". Cartão do viveiro mostra "Despesca prev.".
+  Banco: despesca com `previsao_id` marca a previsão como **realizada**; despesca total/perda cancela as outras abertas.
+  **Clientes e previsões têm preço: só o gestor lê (RLS)**.
 - **Sobrevivência estimada**: o gestor informa no **Plano de ração** (%). Previsto = PL × sobrev. − já despescado;
   biomassa prevista = previsto × último peso. Mostra "ração do dia = X% da biomassa". Sem padrão automático.
 - **Plano de ração (gestor)**: por viveiro — kg/dia (total do viveiro, **incluindo** a ração das bandejas — confirmado),
@@ -103,7 +119,7 @@ status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, ale
 
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
-povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total; trigger → encerrado), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
+clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
