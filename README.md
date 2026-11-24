@@ -5,7 +5,7 @@ App de celular (PWA, funciona offline) para o campo e o gestor.
 **Estoque:** rações e insumos têm saldo. O gestor lança as entradas (notas) e as contagens; o consumo sai sozinho
 a cada trato, bandeja e insumo lançado. No campo só aparecem os produtos que têm estoque.
 
-**Gestor:** lança o povoamento (abre o ciclo) e a despesca (sobrevivência real e FCA), e define o plano de ração
+**Gestor:** inicia o ciclo (viveiro em preparação), lança o povoamento (em cultivo) e a despesca (sobrevivência real e FCA), e define o plano de ração
 por viveiro (kg/dia, sobrevivência estimada, ração, divisão por trato, recado), vigente a partir de uma data.
 
 **Campo** registra:
@@ -23,7 +23,7 @@ O financeiro continua no Apresenta.me; este projeto cuida só da produção.
 
 ## Colocar no ar
 1. Crie um projeto no Supabase e rode `supabase/schema.sql` no SQL Editor.
-2. Cadastre os viveiros (tabela `viveiros`). Os ciclos são abertos pelo povoamento no app.
+2. Cadastre os viveiros (tabela `viveiros`). Os ciclos são iniciados pelo gestor no app (Ciclos e povoamento).
 3. Em Authentication, crie os usuários (e-mail e senha) e cadastre cada um em `perfis` como `gestor` ou `campo`.
    Depois, entrando como gestor no app: Estoque › Produto (cadastrar rações e insumos) e Estoque › Contagem (saldo inicial).
 4. No Vercel, importe o repositório e defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.

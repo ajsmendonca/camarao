@@ -49,7 +49,8 @@ function cadastroDemo() {
     const vid = `demo-v${i + 1}`, cid = `demo-c${i + 1}`
     const dataPov = diasAtras(dias)
     viveiros.push({ id: vid, codigo: cod, area_ha: area, ativo: true })
-    ciclos.push({ id: cid, viveiro_id: vid, codigo: `${cod}-${dataPov}`, data_povoamento: dataPov, status: 'em_cultivo' })
+    const dataIni = diasAtras(dias + 20) // ~20 dias de preparação antes do povoamento
+    ciclos.push({ id: cid, viveiro_id: vid, codigo: `${cod}-${dataIni}`, data_inicio: dataIni, data_povoamento: dataPov, status: 'em_cultivo' })
     if (dias > 20) biometrias.push({ ciclo_id: cid, data: diasAtras(7), peso_medio_g: peso })
     // ração consumida até hoje (aproximada, só para a demonstração)
     resumos[cid] = { pl_quantidade: pl, racao_consumida_kg: Math.round(dias * dias * 0.42 * (area / 3)),
@@ -74,7 +75,7 @@ function cadastroDemo() {
       sobrevivencia_est: novo ? null : ['V05', 'V06', 'V08'].includes(cod) ? 55 : 70,
       produto_id: novo ? 'demo-p3' : 'demo-p1', lancado_por: 'Gestor (exemplo)' }
   })
-  return { versao: 3, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
+  return { versao: 4, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
     parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] } }
 }
 
@@ -82,7 +83,7 @@ function cadastroDemo() {
 export async function carregarCadastro() {
   let cad = await get('cadastro')
   if (MODO_DEMO) {
-    if (!cad || cad.versao !== 3) { cad = cadastroDemo(); await set('cadastro', cad) }
+    if (!cad || cad.versao !== 4) { cad = cadastroDemo(); await set('cadastro', cad) }
     return cad
   }
   if (navigator.onLine) {
@@ -93,9 +94,9 @@ export async function carregarCadastro() {
       const uid = sess.session?.user?.id
       const [v, c, cfg, b, col, prod, pl, pf, bc, fo] = await Promise.all([
         supabase.from('viveiros').select('*').eq('ativo', true).order('codigo'),
-        supabase.from('ciclos').select('*').eq('status', 'em_cultivo'),
+        supabase.from('ciclos').select('*').in('status', ['preparacao', 'em_cultivo']),
         supabase.from('configuracoes').select('*'),
-        supabase.from('vw_ciclo_resumo').select('ciclo_id, ultimo_peso_g, ultima_biometria, pl_quantidade, racao_consumida_kg, populacao_despescada, biomassa_despescada_kg').eq('status', 'em_cultivo'),
+        supabase.from('vw_ciclo_resumo').select('ciclo_id, ultimo_peso_g, ultima_biometria, pl_quantidade, racao_consumida_kg, populacao_despescada, biomassa_despescada_kg').in('status', ['preparacao', 'em_cultivo']),
         // colocações recentes (de qualquer aparelho) e se já têm retirada
         supabase.from('bandeja_colocacoes').select('id, ciclo_id, data, hora, kg_bandejas, lancado_por, bandeja_retiradas(id, data, hora, sobra_kg, resultado, lancado_por)').gte('data', desde),
         supabase.from('vw_estoque_saldo').select('id, nome, categoria, unidade, estoque_minimo, saldo').eq('ativo', true).order('nome'),

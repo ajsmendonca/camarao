@@ -18,23 +18,26 @@ create table if not exists viveiros (
   criado_em     timestamptz not null default now()
 );
 
--- Ciclo = do povoamento à despesca total. É aberto pelo lançamento de povoamento no app
--- (id gerado no celular) e fechado automaticamente pela despesca total.
+-- Ciclo: iniciado pelo gestor (viveiro entra em PREPARAÇÃO) → povoamento (EM CULTIVO) → despesca total (ENCERRADO).
+-- O custo comum é rateado por hectare × dia do ciclo inteiro (data_inicio até data_fim), incluindo a preparação.
 -- Quantidade de PL, fornecedor etc. ficam em `povoamentos`; despesca em `despescas`.
 create table if not exists ciclos (
   id                uuid primary key default gen_random_uuid(),
   viveiro_id        uuid not null references viveiros(id),
-  codigo            text not null unique,        -- V01-2026-11-24
-  data_povoamento   date not null,
-  status            text not null default 'em_cultivo'
-                    check (status in ('em_cultivo','despescado','cancelado')),
-  data_despesca     date,
+  codigo            text not null unique,        -- V01-2026-11-24 (data de início)
+  data_inicio       date not null,               -- início da preparação
+  data_povoamento   date,                        -- preenchida pelo 1º povoamento
+  data_fim          date,                        -- preenchida pela despesca total
+  status            text not null default 'preparacao'
+                    check (status in ('preparacao','em_cultivo','encerrado','cancelado')),
   observacao        text,
-  criado_em         timestamptz not null default now()
+  criado_em         timestamptz not null default now(),
+  check (data_povoamento is null or data_povoamento >= data_inicio),
+  check (data_fim is null or data_fim >= data_inicio)
 );
--- só um ciclo em cultivo por viveiro
+-- só um ciclo aberto (em preparação ou em cultivo) por viveiro
 create unique index if not exists ux_ciclo_ativo_viveiro
-  on ciclos(viveiro_id) where status = 'em_cultivo';
+  on ciclos(viveiro_id) where status in ('preparacao','em_cultivo');
 
 -- Produtos: rações e insumos (fertilizantes, calcário, probióticos...)
 create table if not exists produtos (
@@ -166,6 +169,16 @@ create table if not exists povoamentos (
   criado_em     timestamptz not null default now()
 );
 create index if not exists ix_pov_ciclo on povoamentos(ciclo_id);
+-- 1º povoamento: ciclo passa de preparação para em cultivo
+create or replace function povoa_ciclo() returns trigger language plpgsql security definer as $$
+begin
+  update ciclos set status = 'em_cultivo',
+         data_povoamento = least(coalesce(data_povoamento, new.data), new.data)
+   where id = new.ciclo_id and status in ('preparacao','em_cultivo');
+  return new;
+end $$;
+drop trigger if exists tg_povoa_ciclo on povoamentos;
+create trigger tg_povoa_ciclo after insert or update on povoamentos for each row execute function povoa_ciclo();
 
 -- Despesca: parcial (ciclo continua) ou total (fecha o ciclo e libera o viveiro).
 create table if not exists despescas (
@@ -185,7 +198,7 @@ create index if not exists ix_desp_ciclo on despescas(ciclo_id);
 create or replace function fecha_ciclo_na_despesca() returns trigger language plpgsql security definer as $$
 begin
   if new.tipo = 'total' then
-    update ciclos set status = 'despescado', data_despesca = new.data where id = new.ciclo_id;
+    update ciclos set status = 'encerrado', data_fim = new.data where id = new.ciclo_id;
   end if;
   return new;
 end $$;
@@ -262,8 +275,11 @@ drop view if exists vw_ciclo_resumo;
 create view vw_ciclo_resumo with (security_invoker = true) as
 select
   c.id as ciclo_id, c.codigo, v.codigo as viveiro, v.area_ha,
-  c.data_povoamento, c.status, c.data_despesca,
-  (coalesce(c.data_despesca, current_date) - c.data_povoamento) as dias_cultivo,
+  c.data_inicio, c.data_povoamento, c.data_fim, c.status,
+  (coalesce(c.data_fim, current_date) - c.data_inicio)           as dias_ciclo,        -- base do rateio (ha × dia)
+  (coalesce(c.data_povoamento, coalesce(c.data_fim, current_date)) - c.data_inicio) as dias_preparacao,
+  (coalesce(c.data_fim, current_date) - c.data_povoamento)       as dias_cultivo,
+  round(v.area_ha * (coalesce(c.data_fim, current_date) - c.data_inicio), 2) as hectare_dia,
   coalesce(pv.pl, 0)                                              as pl_quantidade,
   round(pv.pl / nullif(v.area_ha * 10000, 0), 1)                 as densidade_m2,
   coalesce(r.kg_total, 0)                                         as racao_lanco_kg,
@@ -279,8 +295,8 @@ select
   round((pv.pl * pr.sobrevivencia_est / 100 - coalesce(d.pop, 0)) * b.peso_medio_g / 1000, 1) as biomassa_prevista_kg,
   coalesce(d.biomassa, 0)                                         as biomassa_despescada_kg,
   coalesce(d.pop, 0)                                              as populacao_despescada,
-  case when c.status = 'despescado' then round(d.pop * 100.0 / nullif(pv.pl, 0), 1) end as sobrevivencia_real_pct,
-  case when c.status = 'despescado' then round((coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0))
+  case when c.status = 'encerrado' then round(d.pop * 100.0 / nullif(pv.pl, 0), 1) end as sobrevivencia_real_pct,
+  case when c.status = 'encerrado' then round((coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0))
                                                / nullif(d.biomassa, 0), 2) end as fca
 from ciclos c
 join viveiros v on v.id = c.viveiro_id
