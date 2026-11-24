@@ -189,6 +189,11 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
   cliente, NF, faturamento, **custo e resultado do Meu Pescado** (o Antônio quer esses números: o Apresenta.me não era
   usado antes). Totais: 150.390 kg, R$ 3.161.255,50 faturados, R$ 4.171.362,80 de custo. 8 clientes criados.
   V07 despescado em 27/10/2026 tem 103% de sobrevivência — **é real** (laboratório manda mais larvas do que vende).
+  **Biometrias (planilha "Biometria por período 01/01/26 a 24/11/26", confirmado):** só as que caem dentro de um ciclo do
+  viveiro (povoamento ≤ data ≤ despesca/hoje) — 255 gravadas (`lancado_por` "Histórico (Meu Pescado)", n=100), em 27 ciclos;
+  fora: V07 12/08/2026 (1 dia antes do povoamento) e uma linha sem peso. Em 19/11: V05 ficou 12,40 g (havia uma linha de
+  5,30 g do V04 lançada no V05) e V04 ficou 5,30 g (descartado 5,03 g). As biometrias de 24/11 da carga inicial (cópias de
+  19/11) foram substituídas. V02 e V07 têm só o peso do povoamento (0,02 g).
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
