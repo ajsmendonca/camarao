@@ -348,3 +348,11 @@ section .secao { margin-top: 6px; }
 
 .painel tfoot td { border-top: 2px solid var(--linha); border-bottom: 0; }
 .painel .fonte { font-size: 10px; color: var(--cinza); font-weight: 600; }
+
+.p-preco-campos { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
+.p-preco-campos label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--cinza); font-weight: 600; }
+.p-preco-campos label span { display: flex; align-items: center; gap: 6px; color: var(--tinta); font-size: 14px; }
+.p-preco-campos input { width: 80px; padding: 8px 10px; border-radius: 8px; border: 2px solid var(--linha); font-size: 16px; text-align: right; }
+.p-preco-campos button { padding: 10px 14px; border-radius: 10px; background: var(--camarao); color: #fff; font-weight: 700; }
+.p-preco-campos button:disabled { background: #cfc8ba; }
+.p-msg { color: var(--ok); font-weight: 600; }

@@ -73,7 +73,9 @@ create table if not exists configuracoes (
 );
 insert into configuracoes(chave, valor) values
   ('tratos_por_dia', '4'),
-  ('parametros_agua', '["od","ph","temperatura","salinidade","transparencia"]')
+  ('parametros_agua', '["od","ph","temperatura","salinidade","transparencia"]'),
+  -- preço de venda estimado: base no peso de referência, + passo (R$) por grama acima, − por grama abaixo
+  ('preco_venda', '{"base": 20, "peso_ref": 10, "passo": 1}')
 on conflict (chave) do nothing;
 
 -- ---------- Lançamentos de campo ----------
@@ -490,6 +492,10 @@ begin
     execute format('drop policy if exists "%1$s_admin_all" on %1$I', t);
     execute format('create policy "%1$s_admin_all" on %1$I for all to authenticated using (eh_admin()) with check (eh_admin())', t);
   end loop;
+  -- tabela de preço de venda: o gestor também pode alterar
+  drop policy if exists "configuracoes_preco_gestor" on configuracoes;
+  create policy "configuracoes_preco_gestor" on configuracoes for update to authenticated
+    using (eh_gestor() and chave = 'preco_venda') with check (eh_gestor() and chave = 'preco_venda');
   -- tabelas do gestor: só o admin apaga
   foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior','estimativas_sobrevivencia','planos_racao','produtos','estoque_movimentos'] loop
     execute format('drop policy if exists "%1$s_admin_del" on %1$I', t);

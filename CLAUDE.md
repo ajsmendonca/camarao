@@ -19,7 +19,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    alertas (≥110 dias crítico, >90 atenção, OD<3, muita sobra/zerou, sem biometria ou >10 dias, sem plano, sem
    sobrevivência estimada, previsão atrasada, estoque abaixo do mínimo, ração <7 dias); tabela dos viveiros (dias, PL,
    PL/m², peso, ganho g/semana, sobrev. est., biomassa est., **R$/kg e valor de venda** (biomassa est. × preço: da previsão
-   de despesca do viveiro, senão média R$/kg das vendas dos últimos 90 dias), ração consumida, linha de total, **FCA parcial** = consumida ÷ (biomassa est.
+   de despesca do viveiro, senão **preço de tabela** pelo último peso), ração consumida, linha de total, **FCA parcial** = consumida ÷ (biomassa est.
    + despescada), ração hoje/plano, bandejas, OD); por viveiro: curva de crescimento (peso × dias, linha de referência
    em 90 dias) e ração colocada por dia nos últimos 30 dias com o previsto tracejado; previsões de despesca; estoque;
    **histórico de ciclos encerrados**: quadro por faixa de dias de cultivo (até 89, 90–109, ≥110: ciclos, sobrevivência,
@@ -80,6 +80,11 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   Tudo pela **Edge Function `usuarios`** (`supabase/functions/usuarios/index.ts`; usa service_role no servidor; confere
   que quem chama é gestor). Publicar: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/functions/deploy?slug=usuarios`
   (multipart: `metadata` {"entrypoint_path":"index.ts","name":"usuarios","verify_jwt":true} + `file`).
+- **Preço de tabela** (decidido em 24/11/2026; estimativa para análise de estoque e venda): preço = base + (peso − peso
+  de referência) × passo — padrão R$ 20,00 a 10 g, ± R$ 1,00 por grama (12 g = R$ 22; 9 g = R$ 19; proporcional em
+  gramas quebradas). Fica em `configuracoes.preco_venda` ({base, peso_ref, passo}); **gestor e admin alteram no painel**
+  (quadro "Preço de tabela", com exemplos 8–16 g). Usado no valor de venda do painel (quando o viveiro não tem previsão com
+  preço) e para **preencher o preço da previsão de despesca** pelo peso previsto (o gestor pode digitar outro).
 - **Ração de hoje/ontem e tratos feitos** somam os tratos deste aparelho + os do servidor (`cad.tratos`, últimos 2 dias,
   de outros aparelhos ou importados), sem repetir id.
 - **Atualização automática** (24/11/2026): `src/main.jsx` registra o service worker (`virtual:pwa-register`, autoUpdate,

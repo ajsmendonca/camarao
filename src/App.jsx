@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   carregarCadastro, listarLancamentos, adicionarLancamento, excluirLancamento, uuid,
   sincronizar, getOperador, setOperador, hoje, agora, MODO_DEMO, resetarDemo, supabase,
-  emailDoLogin, normalizaLogin, sair, equipe,
+  emailDoLogin, normalizaLogin, sair, equipe, precoTabela,
 } from './data'
 import Painel from './Painel'
 import Registros from './Registros'
@@ -256,7 +256,8 @@ export default function App() {
 
   if (logado === false) return <Login />
   if (!cad || operador === undefined) return <div className="carregando">Carregando…</div>
-  if (tela === 'painel' && gestor) return <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online} onVoltar={() => setTela('inicio')} />
+  if (tela === 'painel' && gestor) return <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online}
+    onVoltar={() => setTela('inicio')} onAlterado={async () => setCad(await carregarCadastro())} />
   if (!operador && MODO_DEMO) return <Entrada onOk={async (n) => { await setOperador(n); setOp(n); setTela('inicio') }} />
 
   return (
@@ -285,7 +286,7 @@ export default function App() {
         {tela === 'equipe' && admin && <TelaEquipe online={online} />}
         {tela === 'registros' && gestor && <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin}
           onAlterado={async () => setCad(await carregarCadastro())} />}
-        {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} />}
+        {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} tabela={cad.config.preco_venda} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
@@ -1419,7 +1420,7 @@ function FormDespesca({ viveiros, clientes, inicial, onSalvar }) {
 }
 
 // ---------- Despesca: previsões (pedidos de venda) e lançamento ----------
-function TelaDespesca({ viveiros, clientes, previsoes, onSalvar }) {
+function TelaDespesca({ viveiros, clientes, previsoes, onSalvar, tabela }) {
   const [aba, setAba] = useState(previsoes.length ? 'previsoes' : 'despesca')
   const [inicial, setInicial] = useState(null)       // previsão escolhida para lançar a despesca
   const [nova, setNova] = useState(false)
@@ -1429,7 +1430,7 @@ function TelaDespesca({ viveiros, clientes, previsoes, onSalvar }) {
       <Alternar opcoes={[['previsoes', `Previsões${previsoes.length ? ` (${previsoes.length})` : ''}`], ['despesca', 'Lançar despesca']]} valor={aba}
         onChange={(a) => { setAba(a); setNova(false); if (a === 'previsoes') setInicial(null) }} />
       {aba === 'previsoes' && (nova
-        ? <FormPrevisao viveiros={viveiros} clientes={clientes} onSalvar={salvar} />
+        ? <FormPrevisao viveiros={viveiros} clientes={clientes} onSalvar={salvar} tabela={tabela} />
         : <ListaPrevisoes previsoes={previsoes} viveiros={viveiros} clientes={clientes} onNova={() => setNova(true)}
             onLancar={(p) => { setInicial({ vid: viveiros.find((v) => v.ciclo?.id === p.ciclo_id)?.id, previsaoId: p.id }); setAba('despesca') }}
             onCancelar={(p) => { const d = { ...p, status: 'cancelada' }; delete d.valor_prev; delete d.criado_em; salvar('previsao', d) }} />)}
@@ -1479,7 +1480,7 @@ function ListaPrevisoes({ previsoes, viveiros, clientes, onNova, onLancar, onCan
   </>)
 }
 
-function FormPrevisao({ viveiros, clientes, onSalvar }) {
+function FormPrevisao({ viveiros, clientes, onSalvar, tabela }) {
   const [vid, setVid] = useState(null)
   const [cliente, setCliente] = useState(null)
   const [novoCli, setNovoCli] = useState(false)
@@ -1491,6 +1492,7 @@ function FormPrevisao({ viveiros, clientes, onSalvar }) {
   const [peso, setPeso] = useState('')
   const [preco, setPreco] = useState('')
   const [obs, setObs] = useState('')
+  const [precoEditado, setPrecoEditado] = useState(false)
   const v = viveiros.find((x) => x.id === vid)
   const jaPrevisto = v ? v.previsoes.reduce((s, p) => s + p.biomassa_prev_kg, 0) : 0
   useEffect(() => {
@@ -1498,7 +1500,14 @@ function FormPrevisao({ viveiros, clientes, onSalvar }) {
     const sugest = v.biomassaPrevista != null ? Math.max(0, Math.round((v.biomassaPrevista - jaPrevisto) / 10) * 10) : null
     setKg(sugest ? String(sugest) : '')
     setPeso(v.ultimaBio ? String(Math.round(v.ultimaBio.peso_medio_g * 10) / 10).replace('.', ',') : '')
+    setPrecoEditado(false)
   }, [vid]) // eslint-disable-line
+  // preço sugerido pela tabela (base a 10 g ± R$ por grama) conforme o peso previsto, até o gestor digitar outro
+  useEffect(() => {
+    if (precoEditado) return
+    const pt = precoTabela(tabela, num(peso))
+    setPreco(pt != null ? String(Math.round(pt * 100) / 100).replace('.', ',') : '')
+  }, [peso, precoEditado]) // eslint-disable-line
   const k = num(kg), g = num(peso), r = num(preco)
   const diasCult = v?.ciclo?.data_povoamento ? diasEntre(v.ciclo.data_povoamento, data) : null
   const lista = clientes.filter((c) => !busca || c.nome.toLowerCase().includes(busca.toLowerCase()))
@@ -1558,7 +1567,7 @@ function FormPrevisao({ viveiros, clientes, onSalvar }) {
         <CampoNum rotulo="Quantidade prevista" valor={kg} onChange={setKg} sufixo="kg" />
         <CampoNum rotulo="Peso médio previsto" valor={peso} onChange={setPeso} sufixo="g" />
       </div>
-      <CampoNum rotulo="Preço previsto" valor={preco} onChange={setPreco} sufixo="R$/kg" />
+      <CampoNum rotulo={precoEditado ? 'Preço previsto' : 'Preço previsto (pela tabela)'} valor={preco} onChange={(x) => { setPrecoEditado(true); setPreco(x) }} sufixo="R$/kg" />
       {k > 0 && (
         <div className="resultado"><span>Valor previsto</span><b>{r > 0 ? reais(k * r) : '–'}</b>
           <small>{g > 0 ? `${mil(Math.round(k * 1000 / g))} camarões · ` : ''}{diasCult != null ? `${diasCult} dias de cultivo na data` : ''}</small></div>

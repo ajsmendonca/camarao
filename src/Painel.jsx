@@ -2,7 +2,7 @@
 // ração diária, previsões de despesca, estoque e ciclos encerrados.
 // Os custos do Apresenta.me entram numa próxima etapa.
 import { useEffect, useState, useCallback } from 'react'
-import { carregarPainel, hoje, MODO_DEMO } from './data'
+import { carregarPainel, hoje, MODO_DEMO, precoTabela, salvarPrecoTabela, PRECO_PADRAO } from './data'
 
 const fmt = (n, d = 1) => n == null || Number.isNaN(n) ? '–'
   : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -10,9 +10,10 @@ const dataBR = (iso) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : 
 const diasEntre = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5)
 const mil = (n) => n == null ? '–' : n >= 1e6 ? `${fmt(n / 1e6, 2)} mi` : `${fmt(n / 1000, 0)} mil`
 const reais = (n) => n == null ? '–' : n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+const reais2 = (n) => n == null ? '–' : Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const RESULT = { zerou: 'Zerou', pouca_sobra: 'Pouca sobra', muita_sobra: 'Muita sobra' }
 
-export default function Painel({ cad, viveiros, produtos, previsoes, clientes, online, onVoltar }) {
+export default function Painel({ cad, viveiros, produtos, previsoes, clientes, online, onVoltar, onAlterado }) {
   const [serie, setSerie] = useState(null)
   const [erro, setErro] = useState(null)
   const [atualizado, setAtualizado] = useState(null)
@@ -42,16 +43,14 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
     return bio > 0 && v.racaoConsumida > 0 ? v.racaoConsumida / bio : null
   }
 
-  // ---- preço de venda: previsão de despesca do viveiro; senão média das vendas dos últimos 90 dias
-  const desde90 = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10)
-  const vendas90 = (serie?.encerrados || []).filter((c) => c.data_fim >= desde90 && c.faturamento > 0 && c.biomassa_despescada_kg > 0)
-  const bio90 = vendas90.reduce((s, c) => s + c.biomassa_despescada_kg, 0)
-  const precoRef = bio90 > 0 ? vendas90.reduce((s, c) => s + c.faturamento, 0) / bio90 : null
+  // ---- preço de venda: previsão de despesca do viveiro; senão tabela (base a 10 g ± R$ por grama) pelo último peso
+  const tabela = { ...PRECO_PADRAO, ...(cad.config?.preco_venda || {}) }
   const precoDe = (v) => {
     const pv = v.previsoes.filter((p) => p.preco_kg_prev != null)
     const kg = pv.reduce((s, p) => s + p.biomassa_prev_kg, 0)
     if (kg > 0) return { preco: pv.reduce((s, p) => s + p.biomassa_prev_kg * p.preco_kg_prev, 0) / kg, fonte: 'previsão' }
-    return precoRef != null ? { preco: precoRef, fonte: 'média 90 dias' } : null
+    const pt = v.ultimaBio ? precoTabela(tabela, v.ultimaBio.peso_medio_g) : null
+    return pt != null ? { preco: pt, fonte: 'tabela' } : null
   }
   const valorVenda = (v) => { const p = precoDe(v); return p && v.biomassaPrevista != null ? v.biomassaPrevista * p.preco : null }
   const totalVenda = cultivo.reduce((s, v) => s + (valorVenda(v) || 0), 0)
@@ -116,11 +115,13 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         <Kpi titulo="Biomassa estimada" valor={`${fmt(biomassaTotal, 0)} kg`}
           nota={semEstimativa ? `${semEstimativa} viveiro(s) sem estimativa` : 'pela sobrevivência do plano'} />
         <Kpi titulo="Valor de venda estimado" valor={totalVenda ? reais(totalVenda) : '–'}
-          nota={precoRef != null ? `média das vendas em 90 dias: ${fmt(precoRef, 2)} R$/kg` : 'sem vendas recentes'} />
+          nota={`tabela: ${reais2(tabela.base)} a ${fmt(tabela.peso_ref, 0)} g, ± ${reais2(tabela.passo)}/g`} />
         <Kpi titulo="Ração hoje" valor={`${fmt(racaoHoje, 0)} kg`} nota={racaoPrev ? `de ${fmt(racaoPrev, 0)} kg previstos (${fmt((racaoHoje / racaoPrev) * 100, 0)}%)` : 'sem plano'} />
         <Kpi titulo="Despesca em 30 dias" valor={`${fmt(kg30, 0)} kg`} nota={em30.length ? `${em30.length} previsão(ões) · ${reais(r30)}` : 'nenhuma prevista'} />
         <Kpi titulo="Ração em estoque" valor={`${fmt(saldoRacao, 0)} kg`} nota={diasRacao != null ? `~${fmt(diasRacao, 0)} dias pelo plano` : '—'} />
       </section>
+
+      <TabelaPreco tabela={tabela} online={online} onSalvo={onAlterado} />
 
       <div className="p-grade">
         <section className="p-bloco p-alertas">
@@ -170,7 +171,7 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                   <td className="n">{g != null ? fmt(g, 2) : '–'}</td>
                   <td className="n">{v.sobrevEst != null ? `${fmt(v.sobrevEst, 0)}%` : '–'}</td>
                   <td className="n">{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : '–'}</td>
-                  <td className="n" title={pr ? `preço da ${pr.fonte}` : ''}>{pr ? <>{fmt(pr.preco, 2)} <small className="fonte">{pr.fonte === 'previsão' ? 'prev.' : 'méd.'}</small></> : '–'}</td>
+                  <td className="n" title={pr ? `preço da ${pr.fonte}` : ''}>{pr ? <>{fmt(pr.preco, 2)} <small className="fonte">{pr.fonte === 'previsão' ? 'prev.' : 'tab.'}</small></> : '–'}</td>
                   <td className="n"><b>{vv != null ? reais(vv) : '–'}</b></td>
                   <td className="n">{fmt(v.racaoConsumida, 0)} kg</td>
                   <td className="n">{f != null ? fmt(f, 2) : '–'}</td>
@@ -189,7 +190,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           </table>
         </div>
         <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
-          Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>méd.</b> = média das vendas dos últimos 90 dias{precoRef != null ? ` (${fmt(precoRef, 2)} R$/kg)` : ''}.</p>
+          Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>tab.</b> = preço de tabela pelo último peso
+          ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.</p>
       </section>
 
       <section className="p-bloco">
@@ -345,6 +347,34 @@ function Historico({ encerrados, carregado }) {
         {encerrados.length > ver && <button type="button" className="p-mais" onClick={() => setVer(encerrados.length)}>Mostrar todos os {encerrados.length} ciclos</button>}
         <p className="p-nota">Ciclos até 11/2026: produção, vendas e custos importados do Meu Pescado (custos com os lançamentos de lá — ex.: a despesca do V07 de 02/03/2026 tem R$ 522 mil de custo por erro de lançamento). A partir daqui, receitas e custos virão do Apresenta.me.</p>
       </>)}
+    </section>
+  )
+}
+
+// Preço de tabela (estimativa): base no peso de referência, ± passo por grama. Gestor/admin alteram.
+function TabelaPreco({ tabela, online, onSalvo }) {
+  const txt = (n) => String(n).replace('.', ',')
+  const [d, setD] = useState({ base: txt(tabela.base), peso_ref: txt(tabela.peso_ref), passo: txt(tabela.passo) })
+  const [msg, setMsg] = useState(null)
+  const n = (s) => Number(String(s).replace(/\./g, '').replace(',', '.'))
+  const novo = { base: n(d.base), peso_ref: n(d.peso_ref), passo: n(d.passo) }
+  const valido = novo.base > 0 && novo.peso_ref > 0 && novo.passo >= 0
+  const mudou = novo.base !== Number(tabela.base) || novo.peso_ref !== Number(tabela.peso_ref) || novo.passo !== Number(tabela.passo)
+  const ex = [8, 10, 12, 14, 16].map((g) => [g, precoTabela(valido ? novo : tabela, g)])
+  return (
+    <section className="p-bloco p-preco">
+      <h2>Preço de tabela (estimativa de venda)</h2>
+      <div className="p-preco-campos">
+        <label>Preço base<span><input value={d.base} onChange={(e) => setD({ ...d, base: e.target.value })} inputMode="decimal" /> R$/kg</span></label>
+        <label>no peso de<span><input value={d.peso_ref} onChange={(e) => setD({ ...d, peso_ref: e.target.value })} inputMode="decimal" /> g</span></label>
+        <label>a cada grama<span>± <input value={d.passo} onChange={(e) => setD({ ...d, passo: e.target.value })} inputMode="decimal" /> R$</span></label>
+        {mudou && <button type="button" disabled={!valido || (!online && !MODO_DEMO)} onClick={async () => {
+          setMsg(null)
+          try { await salvarPrecoTabela(novo); setMsg('Tabela salva.'); onSalvo?.() } catch (e) { setMsg('Não foi possível salvar: ' + (e.message || e)) }
+        }}>Salvar tabela</button>}
+        {msg && <small className="p-msg">{msg}</small>}
+      </div>
+      <p className="p-nota">{ex.map(([g, p]) => `${g} g: ${reais2(p)}`).join(' · ')}</p>
     </section>
   )
 }

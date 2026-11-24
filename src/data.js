@@ -86,7 +86,7 @@ function cadastroDemo() {
   const previsoes = [{ id: 'demo-pv1', ciclo_id: 'demo-c8', cliente_id: 'demo-cl1', data_prevista: diasAtras(-5), biomassa_prev_kg: 2500,
     peso_medio_prev_g: 13.5, preco_kg_prev: 28, status: 'aberta', observacao: null }]
   return { versao: 6, clientes, previsoes, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
-    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] } }
+    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], preco_venda: { ...PRECO_PADRAO } } }
 }
 
 // ---------- Cadastro (viveiros, ciclos ativos, configuração) ----------
@@ -218,6 +218,20 @@ export async function equipe(acao, dados = {}) {
   }
   if (data?.erro) throw new Error(data.erro)
   return data
+}
+
+// Preço de venda estimado pela tabela: base no peso de referência, ± passo por grama (ex.: R$ 20 a 10 g, R$ 1/g)
+export const PRECO_PADRAO = { base: 20, peso_ref: 10, passo: 1 }
+export const precoTabela = (cfg, peso) => {
+  const t = { ...PRECO_PADRAO, ...(cfg || {}) }
+  return peso > 0 ? Math.max(0, Number(t.base) + (peso - Number(t.peso_ref)) * Number(t.passo)) : null
+}
+export async function salvarPrecoTabela(t) {
+  if (MODO_DEMO) {
+    const cad = await get('cadastro'); cad.config.preco_venda = t; await set('cadastro', cad); return
+  }
+  const { error } = await supabase.from('configuracoes').update({ valor: t }).eq('chave', 'preco_venda')
+  if (error) throw error
 }
 
 export const getOperador = () => get('operador')
