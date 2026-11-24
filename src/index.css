@@ -316,3 +316,7 @@ section .secao { margin-top: 6px; }
 .p-kpis { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
 .p-bloco { overflow-x: auto; }
 .p-alertas li { white-space: normal; }
+
+.p-sub { margin: 14px 0 6px; font-size: 13px; color: var(--tinta); }
+.p-cli { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.p-mais { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: var(--areia); color: var(--mar); font-weight: 700; }

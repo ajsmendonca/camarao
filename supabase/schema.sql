@@ -337,6 +337,22 @@ create table if not exists estimativas_sobrevivencia (
 );
 create index if not exists ix_est_sobrev on estimativas_sobrevivencia(ciclo_id, data desc);
 
+-- Histórico de vendas do Meu Pescado (antes do Apresenta.me): uma linha por despesca, com cliente, NF,
+-- faturamento, custo e resultado como estavam no Meu Pescado. Só o gestor lê. Daqui para frente a receita
+-- vem do Apresenta.me (plano Venda de camarão).
+create table if not exists vendas_historico (
+  id           uuid primary key default gen_random_uuid(),
+  despesca_id  uuid not null unique references despescas(id),
+  cliente_id   uuid references clientes(id),
+  nota_fiscal  text,
+  faturamento  numeric(14,2),
+  custo        numeric(14,2),
+  resultado    numeric(14,2),
+  origem       text not null default 'Meu Pescado',
+  observacao   text,
+  criado_em    timestamptz not null default now()
+);
+
 -- ---------- Resumo por ciclo (painel) ----------
 -- Sobrevivência: estimada = a do plano de ração vigente (gestor); real = população despescada / PL povoadas.
 -- Previsto = PL × sobrevivência estimada − já despescado (parcial); biomassa prevista = previsto × último peso.
@@ -400,6 +416,13 @@ from (
   union all select bc.ciclo_id, bc.data, 0, 0, br.sobra_kg from bandeja_retiradas br join bandeja_colocacoes bc on bc.id = br.colocacao_id
 ) x group by ciclo_id, data;
 
+-- Financeiro histórico por ciclo (painel). security_invoker: só o gestor enxerga (RLS de vendas_historico).
+create or replace view vw_ciclo_financeiro_historico with (security_invoker = true) as
+select d.ciclo_id, sum(h.faturamento) as faturamento, sum(h.custo) as custo, sum(h.resultado) as resultado,
+       string_agg(distinct cl.nome, ', ') as clientes, string_agg(distinct h.nota_fiscal, ', ') as notas, min(h.origem) as origem
+from vendas_historico h join despescas d on d.id = h.despesca_id left join clientes cl on cl.id = h.cliente_id
+group by d.ciclo_id;
+
 -- ---------- Segurança: só usuários logados ----------
 alter table viveiros     enable row level security;
 alter table ciclos       enable row level security;
@@ -418,6 +441,7 @@ alter table estoque_movimentos enable row level security;
 alter table povoamentos  enable row level security;
 alter table consumo_anterior enable row level security;
 alter table estimativas_sobrevivencia enable row level security;
+alter table vendas_historico enable row level security;
 alter table despescas    enable row level security;
 alter table clientes     enable row level security;
 alter table previsoes_despesca enable row level security;
@@ -475,7 +499,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['clientes','previsoes_despesca'] loop
+  foreach t in array array['clientes','previsoes_despesca','vendas_historico'] loop
     execute format('drop policy if exists "%1$s_gestor_all" on %1$I', t);
     execute format('create policy "%1$s_gestor_all" on %1$I for all to authenticated using (eh_gestor()) with check (eh_gestor())', t);
   end loop;

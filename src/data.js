@@ -223,16 +223,18 @@ export async function carregarPainel(cad) {
   if (MODO_DEMO) return painelDemo(cad)
   const desde = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10)
   const ids = (cad.ciclos || []).map((c) => c.id)
-  const [res, bio, rac, ag, ret, enc] = await Promise.all([
+  const [res, bio, rac, ag, ret, enc, fin] = await Promise.all([
     supabase.from('vw_ciclo_resumo').select('*').in('status', ['preparacao', 'em_cultivo']),
     supabase.from('biometrias').select('ciclo_id, data, peso_medio_g').eq('tipo', 'simples').in('ciclo_id', ids).order('data'),
     supabase.from('vw_racao_diaria').select('*').in('ciclo_id', ids).gte('data', desde).order('data'),
     supabase.from('agua').select('ciclo_id, data, hora, od, ph, temperatura, salinidade').in('ciclo_id', ids).gte('data', desde)
       .order('data', { ascending: false }).order('hora', { ascending: false }),
     supabase.from('bandeja_retiradas').select('ciclo_id, data, resultado').in('ciclo_id', ids).gte('data', desde).order('data', { ascending: false }),
-    supabase.from('vw_ciclo_resumo').select('*').eq('status', 'encerrado').order('data_fim', { ascending: false }).limit(40),
+    supabase.from('vw_ciclo_resumo').select('*').eq('status', 'encerrado').order('data_fim', { ascending: false }).limit(300),
+    // vendas e custos por ciclo (histórico do Meu Pescado; só o gestor enxerga)
+    supabase.from('vw_ciclo_financeiro_historico').select('*'),
   ])
-  const erro = [res, bio, rac, ag, ret, enc].find((r) => r.error)?.error
+  const erro = [res, bio, rac, ag, ret, enc, fin].find((r) => r.error)?.error
   if (erro) throw erro
   const n = (x) => (x == null ? null : Number(x))
   return {
@@ -241,7 +243,7 @@ export async function carregarPainel(cad) {
     racao: rac.data.map((r) => ({ ...r, colocado_kg: n(r.colocado_kg), consumido_kg: n(r.consumido_kg), sobra_kg: n(r.sobra_kg) })),
     agua: ag.data.map((r) => ({ ...r, od: n(r.od), ph: n(r.ph), temperatura: n(r.temperatura) })),
     retiradas: ret.data,
-    encerrados: enc.data,
+    encerrados: juntaFinanceiro(enc.data, fin.data),
     demo: false,
   }
 }
@@ -264,9 +266,25 @@ function painelDemo(cad) {
     agua.push({ ciclo_id: c.id, data: dia(0), hora: '05:30', od: [4.8, 5.2, 3.6, 4.1, 2.7, 3.9, 5.5, 3.2][i % 8], ph: 7.9, temperatura: 29.5, salinidade: 18 })
     retiradas.push({ ciclo_id: c.id, data: dia(1), resultado: ['pouca_sobra', 'zerou', 'pouca_sobra', 'muita_sobra', 'pouca_sobra', 'zerou', 'pouca_sobra', 'pouca_sobra'][i % 8] })
   })
-  const encerrados = [
-    { viveiro: 'V07', codigo: 'V07-exemplo-1', data_povoamento: dia(120), data_fim: dia(28), dias_cultivo: 92, pl_quantidade: 300000, biomassa_despescada_kg: 2650, populacao_despescada: 212000, sobrevivencia_real_pct: 70.7, fca: 1.48 },
-    { viveiro: 'V02', codigo: 'V02-exemplo-1', data_povoamento: dia(135), data_fim: dia(26), dias_cultivo: 109, pl_quantidade: 300000, biomassa_despescada_kg: 1980, populacao_despescada: 138000, sobrevivencia_real_pct: 46, fca: 2.21 },
-  ]
+  const encerrados = juntaFinanceiro([
+    { ciclo_id: 'e1', viveiro: 'V07', codigo: 'V07-exemplo-1', data_povoamento: dia(120), data_fim: dia(28), dias_cultivo: 92, pl_quantidade: 300000, biomassa_despescada_kg: 2650, populacao_despescada: 212000, sobrevivencia_real_pct: 70.7, fca: 1.48 },
+    { ciclo_id: 'e2', viveiro: 'V02', codigo: 'V02-exemplo-1', data_povoamento: dia(135), data_fim: dia(26), dias_cultivo: 109, pl_quantidade: 300000, biomassa_despescada_kg: 1980, populacao_despescada: 138000, sobrevivencia_real_pct: 46, fca: 2.21 },
+    { ciclo_id: 'e3', viveiro: 'V05', codigo: 'V05-exemplo-1', data_povoamento: dia(260), data_fim: dia(140), dias_cultivo: 118, pl_quantidade: 300000, biomassa_despescada_kg: 2100, populacao_despescada: 120000, sobrevivencia_real_pct: 40, fca: 2.6 },
+  ], [
+    { ciclo_id: 'e1', faturamento: 63600, custo: 41000, resultado: 22600, clientes: 'Comprador A (exemplo)' },
+    { ciclo_id: 'e2', faturamento: 43560, custo: 47100, resultado: -3540, clientes: 'Comprador B (exemplo)' },
+    { ciclo_id: 'e3', faturamento: 48300, custo: 61000, resultado: -12700, clientes: 'Comprador A (exemplo)' },
+  ])
   return { resumos: {}, biometrias, racao, agua, retiradas, encerrados, demo: true }
+}
+
+function juntaFinanceiro(enc, fin) {
+  const n = (x) => (x == null ? null : Number(x))
+  const porCiclo = Object.fromEntries((fin || []).map((f) => [f.ciclo_id, f]))
+  return (enc || []).map((c) => {
+    const f = porCiclo[c.ciclo_id] || {}
+    return { ...c, dias_cultivo: n(c.dias_cultivo), pl_quantidade: n(c.pl_quantidade), biomassa_despescada_kg: n(c.biomassa_despescada_kg),
+      populacao_despescada: n(c.populacao_despescada), sobrevivencia_real_pct: n(c.sobrevivencia_real_pct), fca: n(c.fca),
+      faturamento: n(f.faturamento), custo: n(f.custo), resultado: n(f.resultado), clientes: f.clientes || null, origem_fin: f.origem || null }
+  })
 }

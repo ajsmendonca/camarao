@@ -1253,9 +1253,11 @@ function FormDespesca({ viveiros, clientes, inicial, onSalvar }) {
   const popTotal = pop != null ? v.popDespescada + pop : null
   const sobrev = popTotal != null && v.pl ? (popTotal / v.pl) * 100 : null
   const fca = !perda && b > 0 ? v.racaoConsumida / (v.biomassaDespescada + b) : null
-  const impossivel = sobrev != null && sobrev > 100
+  // acima de 100% acontece quando o laboratório manda mais larvas do que vende: avisa; acima de 130% é erro de digitação
+  const impossivel = sobrev != null && sobrev > 130
   const alertas = []
-  if (impossivel) alertas.push(`Sobrevivência de ${fmt(sobrev, 0)}% é impossível: confira biomassa, peso médio e o povoamento (${mil(v.pl)} PL).`)
+  if (impossivel) alertas.push(`Sobrevivência de ${fmt(sobrev, 0)}% não é possível: confira biomassa, peso médio e o povoamento (${mil(v.pl)} PL).`)
+  else if (sobrev != null && sobrev > 100) alertas.push(`Sobrevivência de ${fmt(sobrev, 1)}% (acima de 100%): o laboratório pode ter mandado mais larvas que o vendido. Confira e confirme.`)
   else if (sobrev != null && sobrev < 30) alertas.push(`Sobrevivência de ${fmt(sobrev, 0)}% — bem baixa. Confira os valores.`)
   if (v && !v.pl) alertas.push(`O ${v.codigo} não tem povoamento lançado: não dá para calcular a sobrevivência.`)
   if (p > 0 && v?.ultimaBio && Math.abs(p - v.ultimaBio.peso_medio_g) / v.ultimaBio.peso_medio_g > 0.3)

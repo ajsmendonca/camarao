@@ -195,20 +195,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                 </tr>))}</tbody></table>
           )}
         </section>
-        <section className="p-bloco">
-          <h2>Ciclos encerrados</h2>
-          {!serie?.encerrados?.length ? <p className="p-vazio">Nenhum ciclo encerrado ainda.</p> : (
-            <table><thead><tr><th>Viveiro</th><th>Despesca</th><th className="n">Dias</th><th className="n">PL</th><th className="n">Biomassa</th><th className="n">Sobrev.</th><th className="n">FCA</th></tr></thead>
-              <tbody>{serie.encerrados.map((c) => (
-                <tr key={c.codigo} className={Number(c.dias_cultivo) >= 110 ? 'atencao' : ''}>
-                  <td>{c.viveiro}</td><td>{dataBR(c.data_fim)}</td><td className="n">{c.dias_cultivo}</td>
-                  <td className="n">{mil(Number(c.pl_quantidade))}</td><td className="n">{fmt(Number(c.biomassa_despescada_kg), 0)} kg</td>
-                  <td className="n">{c.sobrevivencia_real_pct != null ? `${fmt(Number(c.sobrevivencia_real_pct), 1)}%` : '–'}</td>
-                  <td className="n">{c.fca != null ? fmt(Number(c.fca), 2) : '–'}</td>
-                </tr>))}</tbody></table>
-          )}
-        </section>
       </div>
+      <Historico encerrados={serie?.encerrados || []} carregado={!!serie} />
       <p className="p-nota">Custos por viveiro e resultado por ciclo entram com a integração do Apresenta.me.</p>
     </div>
   )
@@ -269,5 +257,69 @@ function GraficoRacao({ dias, previsto }) {
         </svg>
       )}
     </figure>
+  )
+}
+
+// ---------- Histórico de ciclos encerrados (produção + vendas e custos; antes de 12/2026 vêm do Meu Pescado) ----------
+const FAIXAS = [['Até 89 dias', (d) => d < 90], ['90 a 109 dias', (d) => d >= 90 && d < 110], ['110 dias ou mais', (d) => d >= 110]]
+function Historico({ encerrados, carregado }) {
+  const [ver, setVer] = useState(15)
+  const pesoMedio = (c) => (c.populacao_despescada > 0 ? (c.biomassa_despescada_kg * 1000) / c.populacao_despescada : null)
+  const media = (xs, f) => { const v = xs.map(f).filter((x) => x != null && !Number.isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null }
+  const soma = (xs, f) => xs.reduce((a, c) => a + (f(c) || 0), 0)
+  const linhas = FAIXAS.map(([nome, ok]) => {
+    const xs = encerrados.filter((c) => c.dias_cultivo != null && ok(c.dias_cultivo))
+    const bio = soma(xs, (c) => c.biomassa_despescada_kg), fat = soma(xs, (c) => c.faturamento), custo = soma(xs, (c) => c.custo)
+    const comFin = xs.filter((c) => c.resultado != null)
+    return { nome, n: xs.length, sobrev: media(xs, (c) => c.sobrevivencia_real_pct), fca: media(xs, (c) => c.fca), peso: media(xs, pesoMedio),
+      rkg: bio && fat ? fat / bio : null, ckg: bio && custo ? custo / bio : null, res: comFin.length ? soma(comFin, (c) => c.resultado) : null,
+      pos: comFin.length ? comFin.filter((c) => c.resultado > 0).length : null, nFin: comFin.length }
+  })
+  if (!carregado) return null
+  return (
+    <section className="p-bloco">
+      <h2>Histórico de ciclos encerrados ({encerrados.length})</h2>
+      {encerrados.length === 0 ? <p className="p-vazio">Nenhum ciclo encerrado ainda.</p> : (<>
+        <h3 className="p-sub">Por tempo de cultivo</h3>
+        <div className="p-tabela"><table>
+          <thead><tr><th>Dias de cultivo</th><th className="n">Ciclos</th><th className="n">Sobrev. média</th><th className="n">FCA médio</th><th className="n">Peso médio</th>
+            <th className="n">R$/kg vendido</th><th className="n">Custo/kg</th><th className="n">Resultado</th><th className="n">Ciclos positivos</th></tr></thead>
+          <tbody>{linhas.map((l) => (
+            <tr key={l.nome} className={l.res != null && l.res < 0 ? 'atencao' : ''}>
+              <td><b>{l.nome}</b></td><td className="n">{l.n}</td>
+              <td className="n">{l.sobrev != null ? `${fmt(l.sobrev, 1)}%` : '–'}</td><td className="n">{l.fca != null ? fmt(l.fca, 2) : '–'}</td>
+              <td className="n">{l.peso != null ? `${fmt(l.peso, 1)} g` : '–'}</td>
+              <td className="n">{l.rkg != null ? fmt(l.rkg, 2) : '–'}</td><td className="n">{l.ckg != null ? fmt(l.ckg, 2) : '–'}</td>
+              <td className={`n ${l.res != null && l.res < 0 ? 'ruim' : ''}`}>{l.res != null ? reais(l.res) : '–'}</td>
+              <td className="n">{l.pos != null ? `${l.pos} de ${l.nFin}` : '–'}</td>
+            </tr>))}</tbody>
+        </table></div>
+        <h3 className="p-sub">Ciclo a ciclo</h3>
+        <div className="p-tabela"><table>
+          <thead><tr><th>Viveiro</th><th>Povoamento</th><th>Despesca</th><th className="n">Dias</th><th className="n">PL</th><th className="n">Biomassa</th>
+            <th className="n">Peso</th><th className="n">Sobrev.</th><th className="n">FCA</th><th className="n">Faturamento</th><th className="n">R$/kg</th>
+            <th className="n">Custo</th><th className="n">Resultado</th><th>Cliente</th></tr></thead>
+          <tbody>{encerrados.slice(0, ver).map((c) => {
+            const pm = pesoMedio(c)
+            return (
+              <tr key={c.codigo} className={c.dias_cultivo >= 110 ? 'atencao' : ''}>
+                <td><b>{c.viveiro}</b></td><td>{dataBR(c.data_povoamento)}</td><td>{dataBR(c.data_fim)}</td>
+                <td className="n">{c.dias_cultivo}</td><td className="n">{mil(c.pl_quantidade)}</td>
+                <td className="n">{fmt(c.biomassa_despescada_kg, 0)} kg</td><td className="n">{pm != null ? `${fmt(pm, 1)} g` : '–'}</td>
+                <td className="n">{c.sobrevivencia_real_pct != null ? `${fmt(c.sobrevivencia_real_pct, 1)}%` : '–'}</td>
+                <td className="n">{c.fca != null ? fmt(c.fca, 2) : '–'}</td>
+                <td className="n">{c.faturamento != null ? reais(c.faturamento) : '–'}</td>
+                <td className="n">{c.faturamento != null && c.biomassa_despescada_kg ? fmt(c.faturamento / c.biomassa_despescada_kg, 2) : '–'}</td>
+                <td className="n">{c.custo != null ? reais(c.custo) : '–'}</td>
+                <td className={`n ${c.resultado != null && c.resultado < 0 ? 'ruim' : ''}`}>{c.resultado != null ? reais(c.resultado) : '–'}</td>
+                <td className="p-cli">{c.clientes || '–'}</td>
+              </tr>
+            )
+          })}</tbody>
+        </table></div>
+        {encerrados.length > ver && <button type="button" className="p-mais" onClick={() => setVer(encerrados.length)}>Mostrar todos os {encerrados.length} ciclos</button>}
+        <p className="p-nota">Ciclos até 11/2026: produção, vendas e custos importados do Meu Pescado (custos com os lançamentos de lá — ex.: a despesca do V07 de 02/03/2026 tem R$ 522 mil de custo por erro de lançamento). A partir daqui, receitas e custos virão do Apresenta.me.</p>
+      </>)}
+    </section>
   )
 }

@@ -21,7 +21,9 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    PL/m², peso, ganho g/semana, sobrev. est., biomassa est., ração consumida, **FCA parcial** = consumida ÷ (biomassa est.
    + despescada), ração hoje/plano, bandejas, OD); por viveiro: curva de crescimento (peso × dias, linha de referência
    em 90 dias) e ração colocada por dia nos últimos 30 dias com o previsto tracejado; previsões de despesca; estoque;
-   ciclos encerrados (dias, PL, biomassa, sobrevivência real, FCA). Gráficos em SVG próprio, com dica ao passar o mouse.
+   **histórico de ciclos encerrados**: quadro por faixa de dias de cultivo (até 89, 90–109, ≥110: ciclos, sobrevivência,
+   FCA, peso, R$/kg vendido, custo/kg, resultado, ciclos positivos) e tabela ciclo a ciclo com faturamento, custo,
+   resultado e cliente (view `vw_ciclo_financeiro_historico`, só gestor). Gráficos em SVG próprio, com dica ao passar o mouse.
    Falta: custos/resultado (Apresenta.me), plano de ração lado a lado editável no painel.
 3. **Integração Apresenta.me** — AINDA NÃO FEITA (fazer junto com o painel). **Só leitura**, nunca grava no Apresenta.me.
    Decidido em 24/11/2026:
@@ -120,7 +122,8 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   Ciclo em preparação → passa para em cultivo (trigger no banco); já em cultivo → **complemento** (soma PL).
   Não pode ser antes do início do ciclo. Mostra densidade (PL/m²), avisa >80 ou <3. Custo da PL vem da nota no Apresenta.me (plano Larva do Camarão) ligada à entrada de estoque.
 - **Despesca (gestor)**: parcial ou total; biomassa (kg) + peso médio (g) → população, sobrevivência real
-  (população despescada / PL) e FCA (consumida / biomassa). **Sobrevivência >100% bloqueia**. Total **encerra** o ciclo (trigger).
+  (população despescada / PL) e FCA (consumida / biomassa). Sobrevivência **>100% só avisa** (o laboratório às vezes
+  manda mais larvas do que vende — confirmado pelo Antônio); **>130% bloqueia**. Total **encerra** o ciclo (trigger).
 - **Previsão de despesca** (pedido de venda; gestor; tela Despesca › Previsões): viveiro, cliente (da lista ou novo),
   data prevista, quantidade (kg), peso médio previsto (g), preço/kg → valor previsto e nº de camarões.
   Sugere kg = biomassa estimada − já previsto; avisa se passar da biomassa estimada, se a data der ≥110 dias de cultivo,
@@ -146,6 +149,7 @@ clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado),
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 estimativas_sobrevivencia (sobrevivência estimada avulsa, por ciclo e data),
+vendas_historico (por despesca: cliente, NF, faturamento, custo, resultado — Meu Pescado; só gestor) + view vw_ciclo_financeiro_historico,
 consumo_anterior (consumo antes do sistema, por ciclo e produto; entra em racao_consumida_kg, fora do estoque),
 view vw_racao_diaria (ração por ciclo e dia: lanço, bandejas, sobra, colocado, consumido — painel),
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
@@ -161,7 +165,9 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
 - Padrão: despescas < 100 dias positivas; ≥ 110 dias quase todas negativas (FCA 2,2–3,7, sobrevivência 13–40%).
 - Receitas classificadas como "Financeiro"; R$ 66.264,50 a receber vencidos (Natanailson Barros, NF 35 e 36).
 - Cadastro da cidade da fazenda com acento errado ("D´Ajuda") quebrava o clima no painel do Meu Pescado.
-→ No sistema novo: investimento nunca entra no custo do lote; validações impedem sobrevivência >100%, etc.
+→ No sistema novo: investimento nunca entra no custo do lote; sobrevivência >100% pede confirmação (pode ser real).
+- Histórico importado (62 ciclos) por faixa de dias: até 89 dias FCA 1,29 / sobrev. 62% / 11 de 22 positivos;
+  90–109 dias FCA 1,83 / 57% / 10 de 27; ≥110 dias FCA 2,34 / 44% / 4 de 13 (resultado −R$ 615 mil).
 
 ## Pendências / perguntas em aberto
 - **Carga inicial feita em 24/11/2026** (confirmada pelo Antônio), a partir do "Relatório de lotes completo" e do
@@ -176,6 +182,13 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
   `consumo_anterior` (não mexe no estoque; a ração entra na ração consumida e no FCA). Custos do Meu Pescado não importados.
   A pedido do Antônio, a **sobrevivência estimada do Meu Pescado** foi gravada em `estimativas_sobrevivencia` (24/11/2026):
   80% (V01, V03, V04, V06, V08), 61,83% (V05), 100% (V02, V07). Biomassa e FCA parcial conferem com o Meu Pescado.
+  **Histórico (planilha "Lotes vendidos", confirmado):** 62 ciclos encerrados (jan/2024–out/2026), 67 despescas (5 ciclos com
+  parcial + total), PL = população ÷ sobrevivência (arredondado a 10 mil), início = povoamento − dias de preparação (só os
+  lotes de 2024 informam; os demais início = povoamento), laboratórios padronizados (nome original na observação), ração
+  total por ciclo em `consumo_anterior` (produto inativo "Ração (histórico Meu Pescado)"), e **vendas_historico** com
+  cliente, NF, faturamento, **custo e resultado do Meu Pescado** (o Antônio quer esses números: o Apresenta.me não era
+  usado antes). Totais: 150.390 kg, R$ 3.161.255,50 faturados, R$ 4.171.362,80 de custo. 8 clientes criados.
+  V07 despescado em 27/10/2026 tem 103% de sobrevivência — **é real** (laboratório manda mais larvas do que vende).
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
