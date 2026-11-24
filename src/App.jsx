@@ -6,6 +6,7 @@ import {
 } from './data'
 import Painel from './Painel'
 import Registros from './Registros'
+import Cadastros from './Cadastros'
 
 const num = (s) => {
   if (s === '' || s == null) return null
@@ -46,7 +47,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -284,6 +285,7 @@ export default function App() {
         {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
           online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'equipe' && admin && <TelaEquipe online={online} />}
+        {tela === 'cadastros' && gestor && <Cadastros online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'registros' && gestor && <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin}
           onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} tabela={cad.config.preco_venda} />}
@@ -357,9 +359,11 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
         {admin && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
         {gestor && !MODO_DEMO && <button className="acao registros" onClick={() => irPara('registros')}><span>📝</span>Histórico</button>}
-        {gestor && <button className={`acao painel-btn ${admin || MODO_DEMO ? '' : 'largo'}`} onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
+        {gestor && !MODO_DEMO && <button className="acao cadastros" onClick={() => irPara('cadastros')}><span>🤝</span>Cadastros</button>}
         {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
         {gestor && MODO_DEMO && <button className="acao registros" disabled title="Só no sistema real"><span>📝</span>Histórico</button>}
+        {gestor && MODO_DEMO && <button className="acao cadastros" disabled title="Só no sistema real"><span>🤝</span>Cadastros</button>}
+        {gestor && <button className={`acao painel-btn ${admin || MODO_DEMO ? 'largo' : ''}`} onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>

@@ -207,6 +207,51 @@ create table if not exists clientes (
   criado_em             timestamptz not null default now()
 );
 
+-- Fornecedores da Barra Maricultura (ração, insumos, pós-larva, serviços). Vêm do Apresenta.me (pessoas das despesas da
+-- Barra Maricultura, ligadas por apresentame_person_id) e podem ser cadastrados/corrigidos pelo gestor.
+create table if not exists fornecedores (
+  id                    uuid primary key default gen_random_uuid(),
+  nome                  text not null,
+  documento             text,
+  telefone              text,
+  cidade                text,
+  observacao            text,
+  apresentame_person_id bigint unique,
+  ativo                 boolean not null default true,
+  criado_em             timestamptz not null default now()
+);
+alter table clientes add column if not exists observacao text;
+
+-- Lançamentos financeiros copiados do Apresenta.me (só leitura; gravados pela Edge Function "apresentame").
+create table if not exists financeiro_lancamentos (
+  apresentame_id   bigint primary key,
+  data             date,               -- vencimento/data do lançamento
+  competencia      date,
+  tipo             text not null,      -- debit (despesa) | credit (receita)
+  valor            numeric(14,2) not null,
+  descricao        text,
+  plano_id         bigint,
+  plano_nome       text,
+  centro_custo_id  bigint,
+  pessoa_id        bigint,
+  pessoa_nome      text,
+  pago             boolean,
+  observacoes      text,
+  atualizado_em    timestamptz not null default now()
+);
+create index if not exists ix_fin_data on financeiro_lancamentos(data);
+create index if not exists ix_fin_plano on financeiro_lancamentos(plano_id);
+create table if not exists integracao_execucoes (
+  id          bigserial primary key,
+  sistema     text not null default 'apresentame',
+  inicio      timestamptz not null default now(),
+  fim         timestamptz,
+  ok          boolean,
+  resumo      jsonb,
+  erro        text,
+  executado_por text
+);
+
 -- Previsão de despesca (pedido de venda): quanto, com que peso, a que preço e para quem.
 create table if not exists previsoes_despesca (
   id                  uuid primary key,
@@ -547,10 +592,19 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['clientes','previsoes_despesca','vendas_historico'] loop
+  foreach t in array array['clientes','previsoes_despesca','vendas_historico','fornecedores'] loop
     execute format('drop policy if exists "%1$s_gestor_all" on %1$I', t);
     execute format('create policy "%1$s_gestor_all" on %1$I for all to authenticated using (eh_gestor()) with check (eh_gestor())', t);
   end loop;
 end $$;
+
+-- Financeiro do Apresenta.me e log da integração: só o gestor lê; só a Edge Function (service_role) grava
+alter table fornecedores enable row level security;
+alter table financeiro_lancamentos enable row level security;
+alter table integracao_execucoes enable row level security;
+drop policy if exists "financeiro_ler" on financeiro_lancamentos;
+create policy "financeiro_ler" on financeiro_lancamentos for select to authenticated using (eh_gestor());
+drop policy if exists "integracao_ler" on integracao_execucoes;
+create policy "integracao_ler" on integracao_execucoes for select to authenticated using (eh_gestor());
 
 -- Os produtos (rações e insumos) são cadastrados pelo gestor no app, em Estoque › Produto.

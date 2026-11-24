@@ -356,3 +356,11 @@ section .secao { margin-top: 6px; }
 .p-preco-campos button { padding: 10px 14px; border-radius: 10px; background: var(--camarao); color: #fff; font-weight: 700; }
 .p-preco-campos button:disabled { background: #cfc8ba; }
 .p-msg { color: var(--ok); font-weight: 600; }
+
+/* v15: clientes e fornecedores */
+.acao.cadastros { background: #eef5ec; border-color: #cfe0c9; color: #2f5a24; }
+.cad-topo { display: flex; gap: 8px; align-items: center; }
+.cad-busca { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--linha); font-size: 16px; }
+.cad-ativo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.cad-ativo input { width: 22px; height: 22px; }
+.reg-lista li.inativo { opacity: .6; }

@@ -26,7 +26,17 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    FCA, peso, R$/kg vendido, custo/kg, resultado, ciclos positivos) e tabela ciclo a ciclo com faturamento, custo,
    resultado e cliente (view `vw_ciclo_financeiro_historico`, só gestor). Gráficos em SVG próprio, com dica ao passar o mouse.
    Falta: custos/resultado (Apresenta.me), plano de ração lado a lado editável no painel.
-3. **Integração Apresenta.me** — AINDA NÃO FEITA (fazer junto com o painel). **Só leitura**, nunca grava no Apresenta.me.
+3. **Integração Apresenta.me** — sincronização feita em 24/11/2026, **aguardando os segredos** (ver abaixo). **Só leitura**.
+   - **Edge Function `apresentame`** (`supabase/functions/apresentame/index.ts`; gestor/admin chamam pelo botão "Sincronizar
+     agora" em Cadastros): busca `GET {APRESENTAME_URL}/transactions?filter[business_id]=1754&sort=-date&include[]=plan&
+     include[]=person` paginado (para quando a página inteira é anterior ao "desde": 60 dias antes do último copiado, ou
+     01/01/2026), ignora transferências internas, grava em `financeiro_lancamentos` (upsert por `apresentame_id`) e liga
+     pessoas: despesas → `fornecedores`, receitas → `clientes` (por `apresentame_person_id`; se já houver o mesmo nome sem
+     ligação, liga). Log em `integracao_execucoes`. Publicar como a função `usuarios` (slug `apresentame`).
+   - **Segredos no Supabase** (projeto camarao › Edge Functions › Secrets; nunca no app nem no chat): `APRESENTAME_URL`
+     (endereço base da API), `APRESENTAME_TOKEN` (chave) e, se a chave não for `Authorization: Bearer`, `APRESENTAME_HEADER`
+     (nome do cabeçalho). Em 24/11/2026 ainda não configurados — falta o Antônio informar URL/formato e cadastrar a chave.
+   - Próximo passo depois de sincronizar: custos por ciclo (ligar notas ao estoque, rateio ha×dia) e receitas → resultado.
    Decidido em 24/11/2026:
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
      **Fazenda Santo Antonio (id 765)**, separadas por plano de contas (Ração 15368 — inclui probiótico —, Energia 40,
@@ -56,7 +66,10 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
      (criado em 24/11/2026), com o cliente. O gestor liga a(s) receita(s) à despesca (uma despesca pode ter várias vendas)
      → preço médio/kg, receita e resultado do ciclo. Em 24/11/2026 **não havia nenhuma receita** da Barra Maricultura no
      Apresenta.me (as vendas estavam só no Meu Pescado).
-   - **Fornecedores e clientes**: sem cadastro próprio completo. Vêm do Apresenta.me, **só as pessoas com lançamentos da
+   - **Cadastros** (botão 🤝; gestor/admin; precisa de sinal; `src/Cadastros.jsx`): abas Clientes e Fornecedores com busca,
+  novo, correção (nome, CPF/CNPJ, telefone, cidade, observação, ativo) e marca "Apresenta.me #id" nos ligados; quadro da
+  última sincronização e botão "Sincronizar agora". Tabela `fornecedores` (gestor lê/grava).
+- **Fornecedores e clientes** (decisão anterior): sem cadastro próprio completo. Vêm do Apresenta.me, **só as pessoas com lançamentos da
      Barra Maricultura** (o cadastro de pessoas é compartilhado com as outras empresas do Antônio). Fornecedor vem da nota
      ligada à entrada de estoque. Exceção: tabela `clientes` local (para previsões de despesca), alimentada pela integração
      (`apresentame_person_id`) e por **pré-cadastro** do gestor para comprador novo (nome, telefone).
@@ -171,7 +184,8 @@ status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, ale
 
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
-clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
+clientes (+ observacao), fornecedores, financeiro_lancamentos (cópia do Apresenta.me; só gestor lê), integracao_execucoes (log),
+previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (admin|gestor|campo; funções eh_gestor, eh_admin), configuracoes, racao (+ fora_estoque), bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 estimativas_sobrevivencia (sobrevivência estimada avulsa, por ciclo e data),
