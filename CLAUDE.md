@@ -26,7 +26,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    FCA, peso, R$/kg vendido, custo/kg, resultado, ciclos positivos) e tabela ciclo a ciclo com faturamento, custo,
    resultado e cliente (view `vw_ciclo_financeiro_historico`, só gestor). Gráficos em SVG próprio, com dica ao passar o mouse.
    Falta: custos/resultado (Apresenta.me), plano de ração lado a lado editável no painel.
-3. **Integração Apresenta.me** — sincronização feita em 24/11/2026, **aguardando os segredos** (ver abaixo). **Só leitura**.
+3. **Integração Apresenta.me** — sincronização **funcionando desde 24/11/2026**. **Só leitura**.
    - **Edge Function `apresentame`** (`supabase/functions/apresentame/index.ts`; gestor/admin chamam pelo botão "Sincronizar
      agora" em Cadastros): busca `GET {APRESENTAME_URL}/transactions?filter[business_id]=1754&sort=-date&include[]=plan&
      include[]=person` paginado (para quando a página inteira é anterior ao "desde": 60 dias antes do último copiado, ou
@@ -35,7 +35,10 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
      ligação, liga). Log em `integracao_execucoes`. Publicar como a função `usuarios` (slug `apresentame`).
    - **Segredos no Supabase** (projeto camarao › Edge Functions › Secrets; nunca no app nem no chat): `APRESENTAME_URL`
      (endereço base da API), `APRESENTAME_TOKEN` (chave) e, se a chave não for `Authorization: Bearer`, `APRESENTAME_HEADER`
-     (nome do cabeçalho). Em 24/11/2026 ainda não configurados — falta o Antônio informar URL/formato e cadastrar a chave.
+     (nome do cabeçalho). **Configurados em 24/11/2026**: o Antônio cadastrou `APRESENTAME_TOKEN` no painel do Supabase;
+     `APRESENTAME_URL` = `https://api.apresenta.me` (descoberto testando endereços do Apresenta.me; formato Bearer).
+     1ª sincronização (desde 01/01/2025): 43 despesas, R$ 115.634,45, de 15/10/2026 a 15/12/2026 (vencimentos), 26
+     fornecedores criados; nenhuma receita (as vendas ainda não são lançadas no Apresenta.me).
    - Próximo passo depois de sincronizar: custos por ciclo (ligar notas ao estoque, rateio ha×dia) e receitas → resultado.
    Decidido em 24/11/2026:
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo

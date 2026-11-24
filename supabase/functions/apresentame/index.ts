@@ -2,8 +2,8 @@
 // Copia os lançamentos (despesas e receitas) para financeiro_lancamentos e preenche fornecedores (pessoas das despesas)
 // e clientes (pessoas das receitas), ligados por apresentame_person_id. Nunca grava no Apresenta.me.
 // Segredos (Supabase › Edge Functions › Secrets; nunca no app nem no chat):
-//   APRESENTAME_URL    endereço base da API (ex.: https://api.apresenta.me)
-//   APRESENTAME_TOKEN  chave de acesso
+//   APRESENTAME_URL    endereço base da API: https://api.apresenta.me (cadastrado em 24/11/2026)
+//   APRESENTAME_TOKEN  chave de acesso (Authorization: Bearer; cadastrada pelo Antônio em 24/11/2026)
 //   APRESENTAME_HEADER (opcional) nome do cabeçalho da chave; padrão "Authorization: Bearer <chave>"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
@@ -35,6 +35,7 @@ Deno.serve(async (req) => {
   const { data: eu } = await db.from('perfis').select('perfil, nome').eq('user_id', user.id).maybeSingle()
   if (!['gestor', 'admin'].includes(eu?.perfil)) return json({ erro: 'Só gestor ou admin sincronizam com o Apresenta.me.' }, 403)
   const b = await req.json().catch(() => ({}))
+
 
   const { data: exec } = await db.from('integracao_execucoes').insert({ executado_por: eu?.nome }).select('id').single()
   const fim = async (ok: boolean, resumo: unknown, erro?: string) =>
