@@ -84,6 +84,8 @@ create table if not exists racao (
   criado_em   timestamptz not null default now()
 );
 create index if not exists ix_racao_ciclo on racao(ciclo_id, data);
+-- tratos importados do histórico (Meu Pescado): contam no viveiro, mas não saem do estoque (o saldo inicial já os descontou)
+alter table racao add column if not exists fora_estoque boolean not null default false;
 
 -- Bandejas de checagem: o arraçoamento é a lanço; uma vez por dia coloca-se
 -- ração de teste nas bandejas (colocação) e cerca de 1 h depois pesa-se a
@@ -305,7 +307,7 @@ left join (select produto_id,
                   sum(quantidade) filter (where tipo = 'ajuste')  ajustes
            from estoque_movimentos group by produto_id) e on e.produto_id = p.id
 left join (select produto_id, sum(q) saidas from (
-             select produto_id, kg q from racao
+             select produto_id, kg q from racao where not fora_estoque
              union all select produto_id, kg_bandejas from bandeja_colocacoes
              union all select produto_id, quantidade from aplicacoes_insumos
              union all select produto_id, pl_quantidade from povoamentos

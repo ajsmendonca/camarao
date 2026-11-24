@@ -146,7 +146,7 @@ status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, ale
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
 clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
-perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
+perfis (+ função eh_gestor), configuracoes, racao (+ fora_estoque), bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 estimativas_sobrevivencia (sobrevivência estimada avulsa, por ciclo e data),
 vendas_historico (por despesca: cliente, NF, faturamento, custo, resultado — Meu Pescado; só gestor) + view vw_ciclo_financeiro_historico,
@@ -194,6 +194,12 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
   fora: V07 12/08/2026 (1 dia antes do povoamento) e uma linha sem peso. Em 19/11: V05 ficou 12,40 g (havia uma linha de
   5,30 g do V04 lançada no V05) e V04 ficou 5,30 g (descartado 5,03 g). As biometrias de 24/11 da carga inicial (cópias de
   19/11) foram substituídas. V02 e V07 têm só o peso do povoamento (0,02 g).
+  **Arraçoamento (planilha "Nutrições por período 01/04/26 a 24/11/26", confirmado):** 1.292 tratos diários (todos dentro
+  de ciclos), gravados em `racao` com `fora_estoque = true` (o saldo inicial do Meu Pescado já os descontou; a view de
+  estoque ignora esses tratos), `lancado_por` "Rodrigo (Meu Pescado)", trato numerado por dia. Para não contar em dobro:
+  nos 14 ciclos povoados a partir de 01/04 o total de ração em `consumo_anterior` foi apagado (o diário bate exatamente);
+  nos 5 povoados antes de 01/04 o `consumo_anterior` virou só a parte anterior a 01/04 (total − diário). Ração consumida
+  de todos os ciclos e estoque conferidos iguais antes/depois.
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
