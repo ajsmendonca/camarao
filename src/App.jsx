@@ -1000,6 +1000,7 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
         ))}
       </ul>
       <p className="dica">Depois de enviado, a correção é feita no escritório.</p>
+      <p className="dica">Versão do app: {__VERSAO__}</p>
       <div className="links">
         {onTrocarOperador && <button onClick={onTrocarOperador}>Trocar usuário</button>}
         {!MODO_DEMO && <button onClick={() => setSenhaAberta((x) => !x)}>Trocar senha</button>}
