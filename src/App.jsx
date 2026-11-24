@@ -5,6 +5,7 @@ import {
   emailDoLogin, normalizaLogin, sair, equipe,
 } from './data'
 import Painel from './Painel'
+import Registros from './Registros'
 
 const num = (s) => {
   if (s === '' || s == null) return null
@@ -45,7 +46,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { registros: 'Registros', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -228,7 +229,8 @@ export default function App() {
   const racoes = produtos.filter((x) => x.categoria === 'racao')
   const insumos = produtos.filter((x) => x.categoria !== 'racao' && x.categoria !== 'pos_larva')
   const pls = produtos.filter((x) => x.categoria === 'pos_larva')
-  const gestor = cad?.perfil === 'gestor'
+  const admin = cad?.perfil === 'admin'
+  const gestor = admin || cad?.perfil === 'gestor'   // admin faz tudo do gestor
 
   const salvar = async (tipo, dados, extra, voltar = 'inicio') => {
     if (extra) { // [{tipo, dados, id}] lançados juntos, na ordem
@@ -260,7 +262,7 @@ export default function App() {
           : <span className="marca">🦐</span>}
         <div className="titulo">
           <strong>{tela === 'inicio' ? 'Coleta de campo' : tela === 'envios' ? 'Lançamentos' : TELA_NOME[tela]}</strong>
-          <small>{operador}{gestor && ' · gestor'}{MODO_DEMO && ' · demonstração'}</small>
+          <small>{operador}{admin ? ' · admin' : gestor ? ' · gestor' : ''}{MODO_DEMO && ' · demonstração'}</small>
         </div>
         <button className={`status ${online ? 'on' : 'off'}`} onClick={() => setTela('envios')}>
           <span className="ponto" />{online ? 'Online' : 'Sem sinal'}
@@ -269,12 +271,15 @@ export default function App() {
       </header>
 
       <main>
-        {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor} />}
+        {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor} admin={admin} />}
         {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
-        {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar} />}
-        {tela === 'equipe' && gestor && <TelaEquipe online={online} />}
+        {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
+          online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
+        {tela === 'equipe' && admin && <TelaEquipe online={online} />}
+        {tela === 'registros' && admin && <Registros viveiros={viveiros} produtos={produtos} online={online}
+          onAlterado={async () => setCad(await carregarCadastro())} />}
         {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
@@ -331,7 +336,7 @@ function Entrada({ onOk }) {
   )
 }
 
-function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
+function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
   return (
     <>
       <div className="acoes">
@@ -344,16 +349,19 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         {gestor && <button className="acao povoa" onClick={() => irPara('ciclo')}><span>🔄</span>Ciclos</button>}
         {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
-        {gestor && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
-        {gestor && <button className="acao painel-btn largo" onClick={() => irPara('painel')}><span>📊</span>Painel do escritório</button>}
+        {admin && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
+        {admin && !MODO_DEMO && <button className="acao registros" onClick={() => irPara('registros')}><span>📝</span>Registros</button>}
+        {gestor && <button className="acao painel-btn" onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
         {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
+        {gestor && MODO_DEMO && <button className="acao registros" disabled title="Só no sistema real"><span>📝</span>Registros</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>
       <div className="viveiros">
         {viveiros.map((v) => (
           <div key={v.id} className={`card ${v.ciclo ? '' : 'vazio'} ${v.ciclo && !v.emCultivo ? 'preparo' : ''} ${v.dias > 90 ? 'alerta' : ''}`}>
-            <div className="card-topo"><b>{v.codigo}</b>{v.ciclo && <span>{v.emCultivo ? `${v.dias} dias` : 'preparação'}</span>}</div>
+            <div className="card-topo"><b>{v.codigo}</b>{v.ciclo && <span>{v.emCultivo ? `${v.dias} d de cultivo` : 'preparação'}</span>}</div>
+            {v.ciclo && v.emCultivo && <div className="linha"><span>Ciclo</span><b>{v.diasCiclo} dias <small>desde {dataBR(v.ciclo.data_inicio).slice(0, 5)}</small></b></div>}
             {v.ciclo && !v.emCultivo ? (<>
               <div className="linha"><span>Em preparação</span><b>{v.diasCiclo} {v.diasCiclo === 1 ? 'dia' : 'dias'}</b></div>
               <div className="linha"><span>Início</span><b>{dataBR(v.ciclo.data_inicio)}</b></div>
@@ -1145,17 +1153,102 @@ function FormProduto({ produtos, onSalvar }) {
 
 // ---------- Ciclos (gestor): iniciar ciclo (preparação) → povoamento (em cultivo) ----------
 // A despesca total encerra o ciclo. O custo comum é rateado por hectare × dia desde o início do ciclo.
-function FormCiclo({ viveiros, pls, fornecedores, onSalvar }) {
+function FormCiclo({ viveiros, pls, fornecedores, onSalvar, online, onAlterado }) {
   const [vid, setVid] = useState(null)
+  const [complemento, setComplemento] = useState(false)
   const v = viveiros.find((x) => x.id === vid)
-  const etapa = !v ? null : !v.ciclo ? 'iniciar' : 'povoar'
   return (
     <div className="form">
-      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={setVid} todos marcados={viveiros.filter((x) => !x.ciclo || !x.emCultivo).map((x) => x.id)} />
+      <EscolhaViveiro viveiros={viveiros} valor={vid} onChange={(id) => { setVid(id); setComplemento(false) }} todos marcados={viveiros.filter((x) => !x.ciclo || !x.emCultivo).map((x) => x.id)} />
       {!v && <p className="dica esq">Viveiros com • estão vazios ou em preparação.</p>}
       {v && <Etapas v={v} />}
-      {etapa === 'iniciar' && <FormIniciar key={vid} v={v} onSalvar={onSalvar} />}
-      {etapa === 'povoar' && <FormPovoamento key={vid} v={v} pls={pls} fornecedores={fornecedores} onSalvar={onSalvar} />}
+      {v && !v.ciclo && <FormIniciar key={vid} v={v} onSalvar={onSalvar} />}
+      {v?.ciclo && <DadosCiclo key={v.ciclo.id} v={v} online={online} onAlterado={onAlterado} />}
+      {v?.ciclo && !v.emCultivo && <FormPovoamento key={vid} v={v} pls={pls} fornecedores={fornecedores} onSalvar={onSalvar} />}
+      {v?.emCultivo && (complemento
+        ? <FormPovoamento key={vid + 'c'} v={v} pls={pls} fornecedores={fornecedores} onSalvar={onSalvar} />
+        : <button type="button" className="mais" onClick={() => setComplemento(true)}>+ Complemento de povoamento</button>)}
+    </div>
+  )
+}
+
+// Dados já gravados do ciclo e dos povoamentos, para conferir e corrigir (gestor; precisa de sinal)
+function DadosCiclo({ v, online, onAlterado }) {
+  const [ciclo, setCiclo] = useState(null)
+  const [povs, setPovs] = useState(null)
+  const [msg, setMsg] = useState(null)
+  const carregar = useCallback(async () => {
+    if (!online || !supabase) return
+    const [c, p] = await Promise.all([
+      supabase.from('ciclos').select('*').eq('id', v.ciclo.id).maybeSingle(),
+      supabase.from('povoamentos').select('*').eq('ciclo_id', v.ciclo.id).order('data'),
+    ])
+    if (c.error || p.error) return setMsg({ erro: true, texto: (c.error || p.error).message })
+    setCiclo(c.data); setPovs(p.data || [])
+  }, [v.ciclo.id, online])
+  useEffect(() => { carregar() }, [carregar])
+  if (MODO_DEMO) return <div className="etapa"><b>Ciclo {v.ciclo.codigo}</b><span>Início {dataBR(v.ciclo.data_inicio)}{v.ciclo.data_povoamento ? ` · povoado ${dataBR(v.ciclo.data_povoamento)}` : ''}</span><small>Na demonstração os dados do ciclo não são editáveis.</small></div>
+  if (!online) return <p className="dica esq">Sem sinal: os dados gravados do ciclo aparecem quando houver internet.</p>
+  if (!ciclo) return <p className="dica esq">{msg?.texto || 'Carregando dados do ciclo…'}</p>
+  const salvarCiclo = async (d) => {
+    setMsg(null)
+    if (ciclo.data_povoamento && d.data_inicio > ciclo.data_povoamento) return setMsg({ erro: true, texto: `O início não pode ser depois do povoamento (${dataBR(ciclo.data_povoamento)}).` })
+    const { error } = await supabase.from('ciclos').update({ data_inicio: d.data_inicio, observacao: d.observacao || null, codigo: `${v.codigo}-${d.data_inicio}` }).eq('id', ciclo.id)
+    if (error) return setMsg({ erro: true, texto: 'Não foi possível salvar: ' + error.message })
+    setMsg({ texto: 'Ciclo atualizado.' }); await carregar(); onAlterado()
+  }
+  const salvarPov = async (p, d) => {
+    setMsg(null)
+    const pl = num(d.pl)
+    if (!(pl > 0) || !Number.isInteger(pl)) return setMsg({ erro: true, texto: 'Informe as PL em número inteiro.' })
+    if (d.data < ciclo.data_inicio) return setMsg({ erro: true, texto: `O povoamento não pode ser antes do início do ciclo (${dataBR(ciclo.data_inicio)}).` })
+    const { error } = await supabase.from('povoamentos').update({ data: d.data, hora: d.hora, pl_quantidade: pl, fornecedor: d.fornecedor || null,
+      estagio: d.estagio ? d.estagio.toUpperCase() : null, observacao: d.observacao || null }).eq('id', p.id)
+    if (error) return setMsg({ erro: true, texto: 'Não foi possível salvar: ' + error.message })
+    setMsg({ texto: 'Povoamento atualizado.' }); await carregar(); onAlterado()
+  }
+  return (<>
+    <EditaCiclo ciclo={ciclo} onSalvar={salvarCiclo} />
+    {povs?.map((p, i) => <EditaPovoamento key={p.id} p={p} n={i + 1} total={povs.length} area={v.area_ha} onSalvar={(d) => salvarPov(p, d)} />)}
+    {msg && <p className={`dica esq ${msg.erro ? 'aviso-sem-plano' : 'msg-ok'}`}>{msg.texto}</p>}
+  </>)
+}
+function EditaCiclo({ ciclo, onSalvar }) {
+  const [d, setD] = useState({ data_inicio: ciclo.data_inicio, observacao: ciclo.observacao || '' })
+  const mudou = d.data_inicio !== ciclo.data_inicio || (d.observacao || '') !== (ciclo.observacao || '')
+  return (
+    <div className="etapa">
+      <b>Ciclo {ciclo.codigo}</b>
+      <span>{ciclo.data_povoamento ? `Povoado em ${dataBR(ciclo.data_povoamento)} · ${diasEntre(ciclo.data_inicio, ciclo.data_povoamento)} dias de preparação` : 'Em preparação'}</span>
+      <label className="campo"><span>Início do ciclo</span>
+        <input type="date" value={d.data_inicio} max={hoje()} onChange={(e) => setD({ ...d, data_inicio: e.target.value })} /></label>
+      <label className="campo"><span>Observação</span>
+        <textarea rows={2} value={d.observacao} onChange={(e) => setD({ ...d, observacao: e.target.value })} /></label>
+      {mudou && <button type="button" className="primario" onClick={() => onSalvar(d)}>Salvar ciclo</button>}
+    </div>
+  )
+}
+function EditaPovoamento({ p, n, total, area, onSalvar }) {
+  const ini = { data: p.data, hora: String(p.hora).slice(0, 5), pl: String(p.pl_quantidade), fornecedor: p.fornecedor || '', estagio: p.estagio || '', observacao: p.observacao || '' }
+  const [d, setD] = useState(ini)
+  const mudou = Object.keys(ini).some((k) => d[k] !== ini[k])
+  const pl = num(d.pl)
+  return (
+    <div className="etapa">
+      <b>{total > 1 ? `${n}º povoamento` : 'Povoamento'}</b>
+      <span>{mil(p.pl_quantidade)} PL{area ? ` · ${fmt(p.pl_quantidade / (area * 10000), 1)} PL/m²` : ''}{p.lancado_por ? ` · lançado por ${p.lancado_por}` : ''}</span>
+      <div className="duas">
+        <label className="campo"><span>Data</span><input type="date" value={d.data} max={hoje()} onChange={(e) => setD({ ...d, data: e.target.value })} /></label>
+        <label className="campo"><span>Hora</span><input type="time" value={d.hora} onChange={(e) => setD({ ...d, hora: e.target.value })} /></label>
+      </div>
+      <label className="campo"><span>PL povoadas</span><input inputMode="numeric" value={d.pl} onChange={(e) => setD({ ...d, pl: e.target.value.replace(/\D/g, '') })} /></label>
+      {pl > 0 && <small className="dica esq">{mil(pl)} PL</small>}
+      <label className="campo"><span>Laboratório</span><input value={d.fornecedor} onChange={(e) => setD({ ...d, fornecedor: e.target.value })} /></label>
+      <div className="duas">
+        <label className="campo"><span>Estágio</span><input value={d.estagio} onChange={(e) => setD({ ...d, estagio: e.target.value })} placeholder="PL12" /></label>
+        <label className="campo"><span>Observação</span><input value={d.observacao} onChange={(e) => setD({ ...d, observacao: e.target.value })} /></label>
+      </div>
+      {mudou && <button type="button" className="primario" onClick={() => onSalvar(d)}>Salvar povoamento</button>}
     </div>
   )
 }
@@ -1541,13 +1634,13 @@ function TelaEquipe({ online }) {
           <li key={u.id} className={u.ativo ? '' : 'inativo'}>
             <button type="button" className="linha-u" onClick={() => setAberto(aberto === u.id ? null : u.id)}>
               <div><b>{u.nome}{u.eu ? ' (você)' : ''}</b><small>{u.login} · {u.ultimo_acesso ? `último acesso ${dataBR(u.ultimo_acesso.slice(0, 10))}` : 'nunca entrou'}</small></div>
-              <em className={`perfil ${u.perfil || ''}`}>{u.ativo ? (u.perfil === 'gestor' ? 'Gestor' : u.perfil === 'campo' ? 'Campo' : 'Sem perfil') : 'Desativado'}</em>
+              <em className={`perfil ${u.perfil || ''}`}>{u.ativo ? ({ admin: 'Admin', gestor: 'Gestor', campo: 'Campo' }[u.perfil] || 'Sem perfil') : 'Desativado'}</em>
             </button>
             {aberto === u.id && (
               <div className="u-acoes">
                 <button type="button" onClick={() => { const sn = senhaSugerida(); acao('senha', { user_id: u.id, senha: sn }, { nome: u.nome, login: u.login, senha: sn }) }}>Gerar nova senha</button>
-                {!u.eu && <button type="button" onClick={() => acao('alterar', { user_id: u.id, perfil: u.perfil === 'gestor' ? 'campo' : 'gestor' })}>
-                  Mudar para {u.perfil === 'gestor' ? 'campo' : 'gestor'}</button>}
+                {!u.eu && ['campo', 'gestor', 'admin'].filter((pf) => pf !== u.perfil).map((pf) => (
+                  <button key={pf} type="button" onClick={() => acao('alterar', { user_id: u.id, perfil: pf })}>Tornar {pf}</button>))}
                 {!u.eu && <button type="button" className={u.ativo ? 'perigo' : ''} onClick={() => acao('ativo', { user_id: u.id, ativo: !u.ativo })}>
                   {u.ativo ? 'Desativar acesso' : 'Reativar acesso'}</button>}
               </div>
@@ -1581,8 +1674,10 @@ function FormUsuario({ onCriar, onCancelar }) {
       {lg && !lg.includes('@') && normalizaLogin(lg) !== lg && <small className="dica esq">Vai ficar: <b>{normalizaLogin(lg)}</b></small>}
       <label className="campo"><span>Senha provisória (mín. 6)</span>
         <input value={senha} onChange={(e) => setSenha(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
-      <Alternar opcoes={[['campo', 'Campo'], ['gestor', 'Gestor']]} valor={perfil} onChange={setPerfil} />
-      <small className="dica esq">{perfil === 'gestor' ? 'Gestor: vê e lança tudo (plano, ciclos, despesca, previsões, estoque, equipe).' : 'Campo: trato, bandejas, biometria, água, ocorrências e insumos.'}</small>
+      <Alternar opcoes={[['campo', 'Campo'], ['gestor', 'Gestor'], ['admin', 'Admin']]} valor={perfil} onChange={setPerfil} />
+      <small className="dica esq">{{ campo: 'Campo: trato, bandejas, biometria, água, ocorrências e insumos.',
+        gestor: 'Gestor: tudo do campo + plano de ração, ciclos, despesca, previsões, estoque e painel.',
+        admin: 'Admin: tudo do gestor + equipe e correção/exclusão de registros.' }[perfil]}</small>
       <button type="button" className="primario" disabled={aguarde || nome.trim().length < 2 || !lgOk || senha.length < 6}
         onClick={async () => { setAguarde(true); await onCriar({ nome: nome.trim(), login: lg, senha, perfil }); setAguarde(false) }}>
         {aguarde ? 'Criando…' : 'Criar usuário'}</button>

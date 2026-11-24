@@ -320,3 +320,22 @@ section .secao { margin-top: 6px; }
 .p-sub { margin: 14px 0 6px; font-size: 13px; color: var(--tinta); }
 .p-cli { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .p-mais { margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: var(--areia); color: var(--mar); font-weight: 700; }
+.perfil.admin { background: #2c3a66; color: #fff; }
+.acao.registros { background: #f3eef7; border-color: #ddd0e8; color: #4d2c66; }
+
+/* v14: registros e dados do ciclo */
+.campo select { width: 100%; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--linha); background: var(--branco); font-size: 16px; color: var(--tinta); }
+.reg-tipos { display: flex; flex-wrap: wrap; gap: 6px; }
+.reg-tipos button { min-height: 42px; min-width: 0; padding: 0 12px; font-size: 15px; }
+.reg-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.reg-lista li { border-radius: 12px; background: var(--branco); border: 1px solid var(--linha); overflow: hidden; }
+.reg-lista li.aberto { border-color: var(--mar); }
+.reg-linha { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px 12px; background: none; text-align: left; color: var(--tinta); }
+.reg-linha b { white-space: nowrap; font-size: 14px; } .reg-linha span { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.reg-linha small { grid-column: 2; color: var(--cinza); font-size: 12px; }
+.reg-editor { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px; }
+.reg-botoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.reg-botoes .primario { width: auto; flex: 1; min-height: 50px; font-size: 17px; }
+.reg-botoes .perigo { min-height: 50px; padding: 0 14px; border-radius: 14px; background: #fbe9e7; color: var(--erro); font-weight: 700; }
+.msg-ok { color: var(--ok) !important; font-weight: 600; }
+.etapa .campo { margin-top: 8px; }

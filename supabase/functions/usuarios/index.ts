@@ -1,4 +1,4 @@
-// Edge Function "usuarios": o gestor cadastra e administra a equipe pelo app.
+// Edge Function "usuarios": o administrador (perfil admin) cadastra e administra a equipe pelo app.
 // Funcionário sem e-mail entra com um "usuário" (ex.: joao); por trás vira joao@equipe.barramaricultura.com.br
 // (endereço que só existe para o login — nenhum e-mail é enviado).
 // Usa a chave service_role, que só existe aqui no servidor (nunca no app).
@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const { data: { user } } = await admin.auth.getUser(token)
     if (!user) return json({ erro: 'Entre novamente.' }, 401)
     const { data: eu } = await admin.from('perfis').select('perfil').eq('user_id', user.id).maybeSingle()
-    if (eu?.perfil !== 'gestor') return json({ erro: 'Só o gestor pode administrar a equipe.' }, 403)
+    if (eu?.perfil !== 'admin') return json({ erro: 'Só o administrador pode cuidar da equipe.' }, 403)
 
     const b = await req.json()
     const senhaOk = (s: unknown) => typeof s === 'string' && s.length >= 6
@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
       if (nome.length < 2) return json({ erro: 'Informe o nome.' }, 400)
       if (!login.includes('@') && normalizaLogin(login).length < 3) return json({ erro: 'O usuário precisa de pelo menos 3 letras.' }, 400)
       if (!senhaOk(b.senha)) return json({ erro: 'A senha precisa de pelo menos 6 caracteres.' }, 400)
-      if (!['gestor', 'campo'].includes(b.perfil)) return json({ erro: 'Perfil inválido.' }, 400)
+      if (!['admin', 'gestor', 'campo'].includes(b.perfil)) return json({ erro: 'Perfil inválido.' }, 400)
       const { data, error } = await admin.auth.admin.createUser({ email: emailDe(login), password: b.senha, email_confirm: true, user_metadata: { nome } })
       if (error) return json({ erro: /already|registered|exists/i.test(error.message) ? 'Esse usuário já existe.' : error.message }, 400)
       const { error: e2 } = await admin.from('perfis').insert({ user_id: data.user.id, nome, perfil: b.perfil })
@@ -67,10 +67,10 @@ Deno.serve(async (req) => {
     }
 
     if (b.acao === 'alterar') {
-      if (b.user_id === user.id && b.perfil && b.perfil !== 'gestor') return json({ erro: 'Você não pode tirar o seu próprio acesso de gestor.' }, 400)
+      if (b.user_id === user.id && b.perfil && b.perfil !== 'admin') return json({ erro: 'Você não pode tirar o seu próprio acesso de administrador.' }, 400)
       const campos: Record<string, string> = {}
       if (b.nome) campos.nome = String(b.nome).trim()
-      if (['gestor', 'campo'].includes(b.perfil)) campos.perfil = b.perfil
+      if (['admin', 'gestor', 'campo'].includes(b.perfil)) campos.perfil = b.perfil
       const { error } = await admin.from('perfis').update(campos).eq('user_id', b.user_id)
       return error ? json({ erro: error.message }, 400) : json({ ok: true })
     }

@@ -187,7 +187,10 @@ export async function sincronizar() {
       else {
         const dados = { id: item.id, ...item.dados }
         if (['produto', 'ciclo', 'cliente'].includes(item.tipo)) delete dados.lancado_por
-        const { error } = await supabase.from(TABELA[item.tipo]).upsert(dados, { onConflict: 'id' })
+        // lançamentos do campo só podem ser inseridos (corrigir é do admin): reenvio do mesmo id é ignorado.
+        // ciclo, plano, previsão, produto etc. podem ser alterados pelo gestor: reenvio atualiza.
+        const soInsere = ['racao', 'colocacao', 'retirada', 'biometria', 'agua', 'ocorrencia', 'insumo'].includes(item.tipo)
+        const { error } = await supabase.from(TABELA[item.tipo]).upsert(dados, { onConflict: 'id', ignoreDuplicates: soInsere })
         if (error) { erro = error.message; break }
       }
       item.sincronizado = true; item.enviado_em = new Date().toISOString(); enviados++

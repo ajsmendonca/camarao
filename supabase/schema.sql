@@ -55,10 +55,16 @@ alter table produtos add column if not exists estoque_minimo numeric(12,2);
 create table if not exists perfis (
   user_id  uuid primary key references auth.users(id) on delete cascade,
   nome     text not null,
-  perfil   text not null default 'campo' check (perfil in ('gestor','campo'))
+  perfil   text not null default 'campo' check (perfil in ('admin','gestor','campo'))
 );
+-- admin: tudo do gestor + equipe + editar/apagar lançamentos
+alter table perfis drop constraint if exists perfis_perfil_check;
+alter table perfis add constraint perfis_perfil_check check (perfil in ('admin','gestor','campo'));
 create or replace function eh_gestor() returns boolean language sql stable security definer as $$
-  select exists (select 1 from perfis where user_id = auth.uid() and perfil = 'gestor')
+  select exists (select 1 from perfis where user_id = auth.uid() and perfil in ('gestor','admin'))
+$$;
+create or replace function eh_admin() returns boolean language sql stable security definer as $$
+  select exists (select 1 from perfis where user_id = auth.uid() and perfil = 'admin')
 $$;
 
 create table if not exists configuracoes (
@@ -172,16 +178,19 @@ create table if not exists povoamentos (
   criado_em     timestamptz not null default now()
 );
 create index if not exists ix_pov_ciclo on povoamentos(ciclo_id);
--- 1º povoamento: ciclo passa de preparação para em cultivo
+-- Povoamento: a data de povoamento do ciclo é o 1º povoamento; com povoamento o ciclo fica em cultivo, sem nenhum volta
+-- para preparação (vale ao lançar, corrigir ou apagar)
 create or replace function povoa_ciclo() returns trigger language plpgsql security definer as $$
+declare cid uuid := coalesce(new.ciclo_id, old.ciclo_id); primeira date;
 begin
-  update ciclos set status = 'em_cultivo',
-         data_povoamento = least(coalesce(data_povoamento, new.data), new.data)
-   where id = new.ciclo_id and status in ('preparacao','em_cultivo');
-  return new;
+  select min(data) into primeira from povoamentos where ciclo_id = cid;
+  update ciclos set data_povoamento = primeira,
+         status = case when status in ('preparacao','em_cultivo') then (case when primeira is null then 'preparacao' else 'em_cultivo' end) else status end
+   where id = cid;
+  return null;
 end $$;
 drop trigger if exists tg_povoa_ciclo on povoamentos;
-create trigger tg_povoa_ciclo after insert or update on povoamentos for each row execute function povoa_ciclo();
+create trigger tg_povoa_ciclo after insert or update or delete on povoamentos for each row execute function povoa_ciclo();
 
 -- Clientes (compradores) da Barra Maricultura. Preenchida pela integração com as pessoas que têm lançamentos
 -- da Barra Maricultura no Apresenta.me (apresentame_person_id) e, para comprador novo, pré-cadastro pelo gestor.
@@ -246,6 +255,16 @@ begin
   end if;
   return new;
 end $$;
+-- apagar a despesca que encerrou o ciclo reabre o ciclo (em cultivo)
+create or replace function reabre_ciclo() returns trigger language plpgsql security definer as $$
+begin
+  if old.tipo in ('total','perda_total') and not exists (select 1 from despescas where ciclo_id = old.ciclo_id and tipo in ('total','perda_total')) then
+    update ciclos set status = 'em_cultivo', data_fim = null where id = old.ciclo_id and status = 'encerrado';
+  end if;
+  return old;
+end $$;
+drop trigger if exists tg_reabre_ciclo on despescas;
+create trigger tg_reabre_ciclo after delete on despescas for each row execute function reabre_ciclo();
 drop trigger if exists tg_fecha_ciclo on despescas;
 create trigger tg_fecha_ciclo after insert or update on despescas for each row execute function fecha_ciclo_na_despesca();
 
@@ -451,9 +470,30 @@ alter table previsoes_despesca enable row level security;
 do $$
 declare t text;
 begin
-  foreach t in array array['viveiros','configuracoes','aplicacoes_insumos','racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias'] loop
+  -- lançamentos do campo: todos leem e lançam; só o admin corrige ou apaga
+  foreach t in array array['aplicacoes_insumos','racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias'] loop
     execute format('drop policy if exists "%1$s_auth" on %1$I', t);
-    execute format('create policy "%1$s_auth" on %1$I for all to authenticated using (true) with check (true)', t);
+    execute format('drop policy if exists "%1$s_ler" on %1$I', t);
+    execute format('create policy "%1$s_ler" on %1$I for select to authenticated using (true)', t);
+    execute format('drop policy if exists "%1$s_lancar" on %1$I', t);
+    execute format('create policy "%1$s_lancar" on %1$I for insert to authenticated with check (true)', t);
+    execute format('drop policy if exists "%1$s_admin_upd" on %1$I', t);
+    execute format('create policy "%1$s_admin_upd" on %1$I for update to authenticated using (eh_admin()) with check (eh_admin())', t);
+    execute format('drop policy if exists "%1$s_admin_del" on %1$I', t);
+    execute format('create policy "%1$s_admin_del" on %1$I for delete to authenticated using (eh_admin())', t);
+  end loop;
+  -- cadastro de viveiros e configurações: todos leem, só o admin altera
+  foreach t in array array['viveiros','configuracoes'] loop
+    execute format('drop policy if exists "%1$s_auth" on %1$I', t);
+    execute format('drop policy if exists "%1$s_ler" on %1$I', t);
+    execute format('create policy "%1$s_ler" on %1$I for select to authenticated using (true)', t);
+    execute format('drop policy if exists "%1$s_admin_all" on %1$I', t);
+    execute format('create policy "%1$s_admin_all" on %1$I for all to authenticated using (eh_admin()) with check (eh_admin())', t);
+  end loop;
+  -- tabelas do gestor: só o admin apaga
+  foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior','estimativas_sobrevivencia','planos_racao','produtos','estoque_movimentos'] loop
+    execute format('drop policy if exists "%1$s_admin_del" on %1$I', t);
+    execute format('create policy "%1$s_admin_del" on %1$I for delete to authenticated using (eh_admin())', t);
   end loop;
 end $$;
 

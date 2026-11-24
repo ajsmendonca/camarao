@@ -80,7 +80,19 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   que quem chama é gestor). Publicar: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/functions/deploy?slug=usuarios`
   (multipart: `metadata` {"entrypoint_path":"index.ts","name":"usuarios","verify_jwt":true} + `file`).
 - Sem `.env` → **modo demonstração** (8 viveiros de exemplo com a situação real de 24/11/2026).
-- Perfis: `gestor` e `campo` (tabela `perfis`). Só gestor vê/grava o **Plano de ração** (RLS no banco).
+- Perfis (tabela `perfis`; decidido em 24/11/2026): **admin** (tudo do gestor + **Equipe** + **Registros** = corrigir/apagar
+  lançamentos) · **gestor** (plano de ração, ciclos, despesca, previsões, estoque, painel) · **campo** (trato, bandejas,
+  biometria, água, ocorrência, insumos). Funções `eh_gestor()` (gestor ou admin) e `eh_admin()`. RLS: lançamentos do campo
+  todos leem/inserem, **só admin altera/apaga**; tabelas do gestor só admin apaga; viveiros/configurações só admin altera.
+  O envio offline dos lançamentos do campo usa upsert com `ignoreDuplicates` (reenvio do mesmo id não precisa de UPDATE).
+  Antônio = admin. Equipe cadastrada por ele: José Rodrigues (gestor), antonio.campo (campo).
+- **Registros** (admin, precisa de sinal; `src/Registros.jsx`): escolhe viveiro → ciclo (atual ou anteriores) → tipo
+  (Ração, Bandejas, Biometria, Água, Ocorrência, Insumos, Planos, Povoamento, Despesca); lista e, ao tocar, corrige ou
+  apaga (2 toques). Bandejas: colocação + retirada juntas (resultado recalculado). Plano: novo kg/dia reparte os tratos na
+  mesma proporção. Apagar despesca total/perda **reabre o ciclo** (trigger `reabre_ciclo`); apagar o único povoamento
+  volta o ciclo para preparação (trigger `povoa_ciclo` recalcula data do povoamento e situação em insert/update/delete).
+- **Ciclos**: ao escolher um viveiro com ciclo, mostra os **dados gravados** para corrigir (início, observação e cada
+  povoamento: data, hora, PL, laboratório, estágio, obs.; precisa de sinal); complemento é um botão separado.
 
 ### Lançamentos (todos com data **e hora**)
 - **Trato a lanço**: viveiro, nº do trato, ração usada (produto), kg. Vem preenchido com o previsto do plano;
@@ -140,13 +152,13 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   Atalhos −10/−5/+5/+10%. Vale até o próximo plano. O arraçoador vê previsto / colocado / falta.
 
 ### Tela inicial
-Cartão por viveiro: dias de cultivo, peso (biometria peso total), povoado (PL), previsto (kg e % sobrev.), uniformidade (CV), ração hoje "colocado / previsto",
+Cartão por viveiro: **dias de cultivo** (desde o povoamento) e **dias do ciclo** (desde o início da preparação), peso (biometria peso total), povoado (PL), previsto (kg e % sobrev.), uniformidade (CV), ração hoje "colocado / previsto",
 status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, alerta ">90 dias".
 
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
 clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
-perfis (+ função eh_gestor), configuracoes, racao (+ fora_estoque), bandeja_colocacoes, bandeja_retiradas,
+perfis (admin|gestor|campo; funções eh_gestor, eh_admin), configuracoes, racao (+ fora_estoque), bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
 estimativas_sobrevivencia (sobrevivência estimada avulsa, por ciclo e data),
 vendas_historico (por despesca: cliente, NF, faturamento, custo, resultado — Meu Pescado; só gestor) + view vw_ciclo_financeiro_historico,
