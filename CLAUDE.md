@@ -160,7 +160,7 @@ Produção: criar projeto Supabase → rodar supabase/schema.sql → cadastrar v
 produtos e contagem inicial do estoque →
 Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar à tela inicial".
 
-Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (versão anterior ao estoque)
+Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (modo demonstração; atualizada em 24/11/2026 com estoque, ciclos, povoamento, despesca e previsões — publicar o `dist/` com os arquivos)
 Repositório: https://github.com/ajsmendonca/camarao
 
 ## Convenções
