@@ -13,6 +13,12 @@ const URL = import.meta.env.VITE_SUPABASE_URL
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = URL && KEY ? createClient(URL, KEY) : null
 export const MODO_DEMO = !supabase
+// Funcionário sem e-mail entra com um "usuário" (ex.: joao); por trás vira joao@equipe.barramaricultura.com.br
+// (só para o login, nenhum e-mail é enviado). Mesma regra da Edge Function supabase/functions/usuarios.
+export const DOMINIO_EQUIPE = 'equipe.barramaricultura.com.br'
+export const normalizaLogin = (s) =>
+  s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '')
+export const emailDoLogin = (login) => (login.includes('@') ? login.trim().toLowerCase() : `${normalizaLogin(login)}@${DOMINIO_EQUIPE}`)
 
 const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
 
@@ -105,7 +111,7 @@ export async function carregarCadastro() {
         supabase.from('bandeja_colocacoes').select('id, ciclo_id, data, hora, kg_bandejas, lancado_por, bandeja_retiradas(id, data, hora, sobra_kg, resultado, lancado_por)').gte('data', desde),
         supabase.from('vw_estoque_saldo').select('id, nome, categoria, unidade, estoque_minimo, saldo').eq('ativo', true).order('nome'),
         supabase.from('planos_racao').select('*').order('data_inicio', { ascending: false }).order('criado_em', { ascending: false }).limit(300),
-        uid ? supabase.from('perfis').select('perfil').eq('user_id', uid).maybeSingle() : Promise.resolve({ data: null }),
+        uid ? supabase.from('perfis').select('perfil, nome').eq('user_id', uid).maybeSingle() : Promise.resolve({ data: null }),
         // biometrias por tamanho (só distribuição / uniformidade)
         supabase.from('biometrias').select('ciclo_id, data, hora, classes').eq('tipo', 'classes')
           .order('data', { ascending: false }).order('hora', { ascending: false }).limit(200),
@@ -133,6 +139,8 @@ export async function carregarCadastro() {
         distribuicoes: (bc.data || []).map((r) => ({ ...r, hora: String(r.hora).slice(0, 5) })),
         planos: (pl.data || []).map((r) => ({ ...r, kg_dia: Number(r.kg_dia), sobrevivencia_est: r.sobrevivencia_est == null ? null : Number(r.sobrevivencia_est) })),
         perfil: pf.data?.perfil || 'campo',
+        nome: pf.data?.nome || sess.session?.user?.user_metadata?.nome || sess.session?.user?.email?.split('@')[0] || 'Usuário',
+        uid,
         colocacoes: (col.data || []).map((r) => ({
           id: r.id, ciclo_id: r.ciclo_id, data: r.data, hora: String(r.hora).slice(0, 5), kg_bandejas: Number(r.kg_bandejas),
           lancado_por: r.lancado_por,
@@ -188,6 +196,21 @@ export async function sincronizar() {
     await set('lancamentos', lista.filter((l) => !l.sincronizado || new Date(l.criado_em) > limite))
   } finally { sincronizando = false }
   return { enviados, erro }
+}
+
+// Sair: apaga o cadastro guardado (perfil/nome do usuário anterior); lançamentos não enviados continuam no aparelho.
+export async function sair() { await set('cadastro', null); await supabase.auth.signOut() }
+
+// Equipe (só gestor): chama a Edge Function "usuarios", que usa a chave de administração no servidor.
+export async function equipe(acao, dados = {}) {
+  const { data, error } = await supabase.functions.invoke('usuarios', { body: { acao, ...dados } })
+  if (error) {
+    let msg = error.message
+    try { msg = (await error.context.json()).erro || msg } catch { /* sem corpo */ }
+    throw new Error(msg)
+  }
+  if (data?.erro) throw new Error(data.erro)
+  return data
 }
 
 export const getOperador = () => get('operador')

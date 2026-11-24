@@ -55,8 +55,19 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   (a cada 1 min ou botão "Enviar agora"). Ids gerados no celular (uuid) → upsert idempotente.
 - Envio em ordem cronológica (colocação antes da retirada, por causa da FK).
 - Lançamento não enviado pode ser excluído no celular; depois de enviado, correção é no escritório.
-- Login e-mail/senha (Supabase Auth); precisa de sinal só no 1º acesso. Sem `.env` → **modo demonstração**
-  (8 viveiros de exemplo com a situação real de 24/11/2026).
+- Login por **usuário ou e-mail** + senha (Supabase Auth); precisa de sinal só no 1º acesso. Funcionário sem e-mail:
+  usuário `joao.silva` vira `joao.silva@equipe.barramaricultura.com.br` por trás (só para o login; nenhum e-mail é enviado;
+  regra em `data.js` `emailDoLogin` e na Edge Function). Quem lança (`lancado_por`) = **nome do perfil do usuário logado**
+  — não há mais "Quem está lançando?/Trocar usuário" (só no modo demonstração). Lançamentos: "Trocar senha" e "Sair"
+  (sair apaga o cadastro guardado; lançamentos não enviados ficam no aparelho). Após login abre sempre a tela inicial.
+- **Equipe** (gestor, precisa de sinal): botão na tela inicial. Lista usuários (nome, usuário, perfil, último acesso);
+  novo usuário (nome → sugere `nome.sobrenome`, senha provisória de 6 dígitos, perfil campo/gestor) e mostra uma vez
+  "entregue ao funcionário: usuário X · senha Y"; gerar nova senha; mudar perfil; desativar/reativar (bloqueia o login,
+  mantém os lançamentos). Gestor não pode desativar nem rebaixar a si mesmo.
+  Tudo pela **Edge Function `usuarios`** (`supabase/functions/usuarios/index.ts`; usa service_role no servidor; confere
+  que quem chama é gestor). Publicar: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/functions/deploy?slug=usuarios`
+  (multipart: `metadata` {"entrypoint_path":"index.ts","name":"usuarios","verify_jwt":true} + `file`).
+- Sem `.env` → **modo demonstração** (8 viveiros de exemplo com a situação real de 24/11/2026).
 - Perfis: `gestor` e `campo` (tabela `perfis`). Só gestor vê/grava o **Plano de ração** (RLS no banco).
 
 ### Lançamentos (todos com data **e hora**)
@@ -166,9 +177,8 @@ Vercel com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY → no celular, "Adicionar
   Schema aplicado e viveiros V01–V08 cadastrados (V08 3,8 ha). Variáveis `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` no Vercel.
 - Sessões na nuvem: ambiente `camarao` com tokens do Supabase (api.supabase.com) e do Vercel (api.vercel.com) injetados pelo proxy.
   SQL no banco: `POST https://api.supabase.com/v1/projects/clozwpjdpinuroctpoca/database/query` com `{"query": ...}`.
-- Usuários: Antonio José (antonio@barramaricultura.com.br) — gestor, criado em 24/11/2026 com senha provisória. Novos usuários:
-  Auth admin API (`https://clozwpjdpinuroctpoca.supabase.co/auth/v1/admin/users`, service_role via api-keys da Management API)
-  + linha em `perfis`. O app tem "Trocar senha" e "Sair" na tela de lançamentos.
+- Usuários: Antonio José (antonio@barramaricultura.com.br) — gestor, criado em 24/11/2026. Os demais o próprio Antônio
+  cadastra no app (tela Equipe). Testes: criar usuários temporários e apagá-los depois (o banco real só tem dados reais).
 
 Demonstração publicada (privada do Antônio): https://claude.ai/artifact/UZGwZKU7UmSbVdvs4emqN3 (modo demonstração; atualizada em 24/11/2026 com estoque, ciclos, povoamento, despesca e previsões — publicar o `dist/` com os arquivos)
 Repositório: https://github.com/ajsmendonca/camarao

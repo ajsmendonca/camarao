@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   carregarCadastro, listarLancamentos, adicionarLancamento, excluirLancamento, uuid,
   sincronizar, getOperador, setOperador, hoje, agora, MODO_DEMO, resetarDemo, supabase,
+  emailDoLogin, normalizaLogin, sair, equipe,
 } from './data'
 
 const num = (s) => {
@@ -43,7 +44,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -72,7 +73,9 @@ export default function App() {
   useEffect(() => {
     if (!logado) return
     (async () => {
-      setCad(await carregarCadastro()); setOp((await getOperador()) || null); await recarregar(); sync()
+      const c = await carregarCadastro(); setCad(c); setTela('inicio')
+      // com login, quem lança é o usuário logado; o nome digitado só existe na demonstração
+      setOp(MODO_DEMO ? (await getOperador()) || null : c?.nome || 'Usuário'); await recarregar(); sync()
     })()
     const on = () => { setOnline(true); sync() }, off = () => setOnline(false)
     window.addEventListener('online', on); window.addEventListener('offline', off)
@@ -235,7 +238,7 @@ export default function App() {
 
   if (logado === false) return <Login />
   if (!cad || operador === undefined) return <div className="carregando">Carregando…</div>
-  if (!operador) return <Entrada onOk={async (n) => { await setOperador(n); setOp(n); setTela('inicio') }} />
+  if (!operador && MODO_DEMO) return <Entrada onOk={async (n) => { await setOperador(n); setOp(n); setTela('inicio') }} />
 
   return (
     <div className="app">
@@ -259,6 +262,7 @@ export default function App() {
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
         {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar} />}
+        {tela === 'equipe' && gestor && <TelaEquipe online={online} />}
         {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
         {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
@@ -267,7 +271,7 @@ export default function App() {
         {tela === 'ocorrencia' && <FormOcorrencia viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'envios' && <Envios lanc={lanc} viveiros={viveiros} ciclos={ciclos} produtos={produtos} clientes={clientes} online={online} onSync={sync}
           onExcluir={async (id) => { await excluirLancamento(id); recarregar() }}
-          onTrocarOperador={async () => { await setOperador(''); setOp(null) }}
+          onTrocarOperador={MODO_DEMO ? async () => { await setOperador(''); setOp(null) } : null}
           onResetDemo={async () => { await resetarDemo(); setCad(await carregarCadastro()); recarregar() }} />}
       </main>
 
@@ -284,8 +288,8 @@ function Login() {
   const [aguarde, setAguarde] = useState(false)
   const entrar = async () => {
     setAguarde(true); setErro(null)
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha })
-    if (error) setErro(navigator.onLine ? 'E-mail ou senha incorretos.' : 'Sem internet: o primeiro acesso precisa de sinal.')
+    const { error } = await supabase.auth.signInWithPassword({ email: emailDoLogin(email), password: senha })
+    if (error) setErro(navigator.onLine ? 'Usuário ou senha incorretos (ou acesso desativado).' : 'Sem internet: o primeiro acesso precisa de sinal.')
     setAguarde(false)
   }
   return (
@@ -293,7 +297,8 @@ function Login() {
       <div className="logo">🦐</div>
       <h1>Coleta de campo</h1>
       <p>Entre uma vez com sinal; depois funciona offline.</p>
-      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" autoComplete="username" />
+      <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Usuário ou e-mail" autoComplete="username"
+        autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha" autoComplete="current-password" />
       {erro && <p className="erro-login">{erro}</p>}
       <button className="primario" disabled={aguarde || !email || !senha} onClick={entrar}>{aguarde ? 'Entrando…' : 'Entrar'}</button>
@@ -326,7 +331,9 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor }) {
         {gestor && <button className="acao plano" onClick={() => irPara('plano')}><span>📋</span>Plano de ração</button>}
         {gestor && <button className="acao povoa" onClick={() => irPara('ciclo')}><span>🔄</span>Ciclos e povoamento</button>}
         {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
-        <button className={`acao estoque ${gestor ? 'largo' : ''}`} onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
+        <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
+        {gestor && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
+        {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>
@@ -972,9 +979,9 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
       </ul>
       <p className="dica">Depois de enviado, a correção é feita no escritório.</p>
       <div className="links">
-        <button onClick={onTrocarOperador}>Trocar usuário</button>
+        {onTrocarOperador && <button onClick={onTrocarOperador}>Trocar usuário</button>}
         {!MODO_DEMO && <button onClick={() => setSenhaAberta((x) => !x)}>Trocar senha</button>}
-        {!MODO_DEMO && <button onClick={() => supabase.auth.signOut()}>Sair</button>}
+        {!MODO_DEMO && <button onClick={() => { if (pend === 0 || window.confirm(`Há ${pend} lançamento(s) não enviado(s). Eles ficam neste aparelho e serão enviados no próximo login. Sair mesmo assim?`)) sair() }}>Sair</button>}
         {MODO_DEMO && <button onClick={onResetDemo}>Zerar demonstração</button>}
       </div>
       {senhaAberta && <TrocarSenha online={online} onFim={() => setSenhaAberta(false)} />}
@@ -1473,6 +1480,97 @@ function TrocarSenha({ online, onFim }) {
       {msg && <p className={`dica esq ${msg.tipo === 'erro' ? 'aviso-sem-plano' : ''}`}>{msg.texto}</p>}
       <button className="primario" disabled={!online || aguarde || !s1 || erro || s1 !== s2} onClick={salvar}>
         {!online ? 'Sem sinal' : aguarde ? 'Salvando…' : 'Salvar nova senha'}</button>
+    </div>
+  )
+}
+
+// ---------- Equipe (gestor): cadastro de usuários, com ou sem e-mail ----------
+const senhaSugerida = () => String(Math.floor(100000 + Math.random() * 900000))
+function TelaEquipe({ online }) {
+  const [lista, setLista] = useState(null)
+  const [erro, setErro] = useState(null)
+  const [novo, setNovo] = useState(false)
+  const [entregar, setEntregar] = useState(null)   // {nome, login, senha} para mostrar ao gestor
+  const [aberto, setAberto] = useState(null)
+  const carregar = useCallback(async () => {
+    setErro(null)
+    try { setLista((await equipe('listar')).usuarios) } catch (e) { setErro(e.message) }
+  }, [])
+  useEffect(() => { if (online) carregar() }, [online, carregar])
+  // devolve true se deu certo; o erro aparece no topo da tela
+  const acao = async (a, dados, msgOk) => {
+    setErro(null)
+    try { await equipe(a, dados); if (msgOk) setEntregar(msgOk); setAberto(null); await carregar(); return true } catch (e) { setErro(e.message); return false }
+  }
+  if (!online) return <p className="dica">A equipe só pode ser administrada com sinal de internet.</p>
+  return (
+    <div className="form">
+      {entregar && (
+        <div className="etapa aberta"><b>Entregue ao funcionário</b>
+          <span>{entregar.nome}: usuário <b className="cod">{entregar.login}</b> · senha <b className="cod">{entregar.senha}</b></span>
+          <small>Anote agora — a senha não aparece de novo. Ele pode trocar em Lançamentos › Trocar senha.</small>
+          <button type="button" className="mais" onClick={() => setEntregar(null)}>Ok, anotei</button>
+        </div>
+      )}
+      {erro && <p className="dica esq aviso-sem-plano">{erro}</p>}
+      {novo ? <FormUsuario onCancelar={() => setNovo(false)}
+          onCriar={async (d) => {
+            const login = d.login.includes('@') ? d.login.trim().toLowerCase() : normalizaLogin(d.login)
+            if (await acao('criar', d, { nome: d.nome, login, senha: d.senha })) setNovo(false)
+          }} />
+        : <button type="button" className="primario" onClick={() => setNovo(true)}>+ Novo usuário</button>}
+      {lista == null && !erro && <p className="dica">Carregando…</p>}
+      <ul className="equipe">
+        {(lista || []).map((u) => (
+          <li key={u.id} className={u.ativo ? '' : 'inativo'}>
+            <button type="button" className="linha-u" onClick={() => setAberto(aberto === u.id ? null : u.id)}>
+              <div><b>{u.nome}{u.eu ? ' (você)' : ''}</b><small>{u.login} · {u.ultimo_acesso ? `último acesso ${dataBR(u.ultimo_acesso.slice(0, 10))}` : 'nunca entrou'}</small></div>
+              <em className={`perfil ${u.perfil || ''}`}>{u.ativo ? (u.perfil === 'gestor' ? 'Gestor' : u.perfil === 'campo' ? 'Campo' : 'Sem perfil') : 'Desativado'}</em>
+            </button>
+            {aberto === u.id && (
+              <div className="u-acoes">
+                <button type="button" onClick={() => { const sn = senhaSugerida(); acao('senha', { user_id: u.id, senha: sn }, { nome: u.nome, login: u.login, senha: sn }) }}>Gerar nova senha</button>
+                {!u.eu && <button type="button" onClick={() => acao('alterar', { user_id: u.id, perfil: u.perfil === 'gestor' ? 'campo' : 'gestor' })}>
+                  Mudar para {u.perfil === 'gestor' ? 'campo' : 'gestor'}</button>}
+                {!u.eu && <button type="button" className={u.ativo ? 'perigo' : ''} onClick={() => acao('ativo', { user_id: u.id, ativo: !u.ativo })}>
+                  {u.ativo ? 'Desativar acesso' : 'Reativar acesso'}</button>}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="dica">Funcionário sem e-mail entra com o <b>usuário</b> e a senha. Desativar bloqueia o acesso sem apagar os lançamentos dele.</p>
+    </div>
+  )
+}
+
+function FormUsuario({ onCriar, onCancelar }) {
+  const [nome, setNome] = useState('')
+  const [login, setLogin] = useState('')
+  const [editouLogin, setEditouLogin] = useState(false)
+  const [senha, setSenha] = useState(senhaSugerida)
+  const [perfil, setPerfil] = useState('campo')
+  const [aguarde, setAguarde] = useState(false)
+  // sugere o usuário a partir do nome: "João da Silva" -> "joao.silva"
+  const sugerido = (() => { const p = normalizaLogin(nome).split('.').filter((x) => x && !['da', 'de', 'do', 'das', 'dos', 'e'].includes(x)); return p.length > 1 ? `${p[0]}.${p[p.length - 1]}` : p[0] || '' })()
+  const lg = editouLogin ? login : sugerido
+  const lgOk = lg.includes('@') ? /\S+@\S+\.\S+/.test(lg) : normalizaLogin(lg).length >= 3
+  return (
+    <div className="etapa">
+      <b>Novo usuário</b>
+      <label className="campo"><span>Nome</span>
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: João da Silva" /></label>
+      <label className="campo"><span>Usuário para entrar (ou e-mail, se tiver)</span>
+        <input value={lg} onChange={(e) => { setEditouLogin(true); setLogin(e.target.value) }} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="joao.silva" /></label>
+      {lg && !lg.includes('@') && normalizaLogin(lg) !== lg && <small className="dica esq">Vai ficar: <b>{normalizaLogin(lg)}</b></small>}
+      <label className="campo"><span>Senha provisória (mín. 6)</span>
+        <input value={senha} onChange={(e) => setSenha(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+      <Alternar opcoes={[['campo', 'Campo'], ['gestor', 'Gestor']]} valor={perfil} onChange={setPerfil} />
+      <small className="dica esq">{perfil === 'gestor' ? 'Gestor: vê e lança tudo (plano, ciclos, despesca, previsões, estoque, equipe).' : 'Campo: trato, bandejas, biometria, água, ocorrências e insumos.'}</small>
+      <button type="button" className="primario" disabled={aguarde || nome.trim().length < 2 || !lgOk || senha.length < 6}
+        onClick={async () => { setAguarde(true); await onCriar({ nome: nome.trim(), login: lg, senha, perfil }); setAguarde(false) }}>
+        {aguarde ? 'Criando…' : 'Criar usuário'}</button>
+      <button type="button" className="mais" onClick={onCancelar}>Cancelar</button>
     </div>
   )
 }
