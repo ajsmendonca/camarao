@@ -143,6 +143,7 @@ viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_c
 clientes, previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (+ função eh_gestor), configuracoes, racao, bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
+consumo_anterior (consumo antes do sistema, por ciclo e produto; entra em racao_consumida_kg, fora do estoque),
 view vw_racao_diaria (ração por ciclo e dia: lanço, bandejas, sobra, colocado, consumido — painel),
 view vw_ciclo_resumo (dias_ciclo, dias_preparacao, dias_cultivo, hectare_dia (base do rateio), PL, densidade, ração colocada/consumida, último peso, sobrevivência estimada, população/biomassa
 prevista, despescado, sobrevivência real e FCA). Ciclos/povoamentos/despescas: só gestor grava. Schema testado em PostgreSQL 16.
@@ -166,6 +167,10 @@ Sem seed de produtos: o gestor cadastra no app (Estoque › Produto). Produtos e
   num lote só de 600 mil e foram divididos), última biometria de 24/11 (V02 e V07 sem), e 15 produtos com saldo inicial
   (ajuste "Saldo inicial", preço médio do Meu Pescado na observação). Sobrevivência de 80% do Meu Pescado **não** foi
   copiada — o Antônio informa a estimativa no plano de ração.
+  Em seguida (também confirmado), com os **relatórios de custos por viveiro** (PDF, V01–V08): início do ciclo =
+  povoamento − dias em preparação (V01 16/08, V02 23/10, V03/V04 14/09, V05 14/07, V06 13/07, V07 27/10, V08 14/07;
+  código do ciclo atualizado), fornecedor com nome completo, e **ração e fertilização já usadas** gravadas em
+  `consumo_anterior` (não mexe no estoque; a ração entra na ração consumida e no FCA). Custos do Meu Pescado não importados.
 - Respondido em 24/11/2026: kg/dia do plano inclui bandejas (sim); muita sobra = >20% do colocado; CV 20%/30% ok;
   4 tratos e 5 parâmetros de água ficam como estão (o plano de ração ajusta as quantidades).
 - Rações e insumos vêm do estoque deste sistema (ver "Estoque"). Falta cadastrar a lista real de produtos e o saldo inicial.
