@@ -311,6 +311,19 @@ left join (select produto_id, sum(q) saidas from (
              union all select produto_id, pl_quantidade from povoamentos
            ) x where produto_id is not null group by produto_id) s on s.produto_id = p.id;
 
+-- Consumo anterior ao sistema (migração do Meu Pescado): ração e insumos já usados no ciclo antes de começar a lançar
+-- aqui. Entra na ração consumida/FCA do ciclo, mas NÃO mexe no estoque (o saldo inicial já veio descontado).
+create table if not exists consumo_anterior (
+  id          uuid primary key default gen_random_uuid(),
+  ciclo_id    uuid not null references ciclos(id),
+  produto_id  uuid not null references produtos(id),
+  quantidade  numeric(12,2) not null check (quantidade > 0),
+  data_ref    date,                        -- data informada no relatório de origem
+  origem      text not null default 'Meu Pescado',
+  criado_em   timestamptz not null default now()
+);
+create index if not exists ix_consumo_ant_ciclo on consumo_anterior(ciclo_id);
+
 -- ---------- Resumo por ciclo (painel) ----------
 -- Sobrevivência: estimada = a do plano de ração vigente (gestor); real = população despescada / PL povoadas.
 -- Previsto = PL × sobrevivência estimada − já despescado (parcial); biomassa prevista = previsto × último peso.
@@ -328,8 +341,9 @@ select
   coalesce(r.kg_total, 0)                                         as racao_lanco_kg,
   coalesce(ck.bandejas, 0)                                        as racao_bandejas_kg,
   coalesce(ck.sobra, 0)                                           as sobra_kg,
-  coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0)              as racao_colocada_kg,   -- lanço + bandejas
-  coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0) as racao_consumida_kg,
+  coalesce(ca.racao, 0)                                           as racao_anterior_kg,   -- antes do sistema (Meu Pescado)
+  coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) + coalesce(ca.racao, 0) as racao_colocada_kg,   -- lanço + bandejas + anterior
+  coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0) + coalesce(ca.racao, 0) as racao_consumida_kg,
   b.peso_medio_g                                                  as ultimo_peso_g,
   b.data                                                          as ultima_biometria,
   coalesce(o.mortos, 0)                                           as mortalidade_lancada,
@@ -339,12 +353,14 @@ select
   coalesce(d.biomassa, 0)                                         as biomassa_despescada_kg,
   coalesce(d.pop, 0)                                              as populacao_despescada,
   case when c.status = 'encerrado' then round(d.pop * 100.0 / nullif(pv.pl, 0), 1) end as sobrevivencia_real_pct,
-  case when c.status = 'encerrado' then round((coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0))
+  case when c.status = 'encerrado' then round((coalesce(r.kg_total, 0) + coalesce(ck.bandejas, 0) - coalesce(ck.sobra, 0) + coalesce(ca.racao, 0))
                                                / nullif(d.biomassa, 0), 2) end as fca
 from ciclos c
 join viveiros v on v.id = c.viveiro_id
 left join (select ciclo_id, sum(pl_quantidade) pl from povoamentos group by ciclo_id) pv on pv.ciclo_id = c.id
 left join (select ciclo_id, sum(kg) kg_total from racao group by ciclo_id) r on r.ciclo_id = c.id
+left join (select a.ciclo_id, sum(a.quantidade) racao from consumo_anterior a join produtos p on p.id = a.produto_id
+           where p.categoria = 'racao' group by a.ciclo_id) ca on ca.ciclo_id = c.id
 left join (select bc.ciclo_id, sum(bc.kg_bandejas) bandejas, sum(coalesce(br.sobra_kg, 0)) sobra
            from bandeja_colocacoes bc left join bandeja_retiradas br on br.colocacao_id = bc.id
            group by bc.ciclo_id) ck on ck.ciclo_id = c.id
@@ -384,6 +400,7 @@ alter table agua         enable row level security;
 alter table ocorrencias  enable row level security;
 alter table estoque_movimentos enable row level security;
 alter table povoamentos  enable row level security;
+alter table consumo_anterior enable row level security;
 alter table despescas    enable row level security;
 alter table clientes     enable row level security;
 alter table previsoes_despesca enable row level security;
@@ -426,7 +443,7 @@ create policy "estoque_gestor_upd" on estoque_movimentos for update to authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['ciclos','povoamentos','despescas'] loop
+  foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior'] loop
     execute format('drop policy if exists "%1$s_auth" on %1$I', t);
     execute format('drop policy if exists "%1$s_ler" on %1$I', t);
     execute format('create policy "%1$s_ler" on %1$I for select to authenticated using (true)', t);
