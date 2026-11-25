@@ -1,7 +1,7 @@
 // App do escritório (gestor/admin): menu lateral com as páginas de gestão.
 // O coletor de campo (App.jsx) continua sendo o app do celular, enxuto e offline.
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { carregarPainel, hoje, MODO_DEMO, salvarConfig, supabase, PRECO_PADRAO } from './data'
+import { carregarPainel, hoje, MODO_DEMO, salvarConfig, supabase, PRECO_PADRAO, PLANO_PADRAO, kgPadrao } from './data'
 import { CustosViveiros, NotasApresentame } from './Financeiro'
 import { TabelaPreco, Impostos } from './Painel'
 
@@ -20,13 +20,18 @@ const RESULT = { zerou: 'Zerou', pouca_sobra: 'Pouca sobra', muita_sobra: 'Muita
 const CAT = { racao: 'Ração', pos_larva: 'Pós-larva', fertilizante: 'Fertilizante', calcario: 'Calcário / cal', probiotico: 'Probiótico', outro: 'Outro' }
 
 export const MENU = [
-  ['painel', '📊', 'Painel'],
+  ['painel', '📊', 'Painel', 'Produção'],
   ['ciclos', '🔄', 'Viveiros e ciclos'],
   ['plano', '📋', 'Plano de ração'],
   ['despescas', '🧺', 'Despescas'],
-  ['estoque', '📦', 'Estoque'],
+  ['racao', '🍚', 'Ração', 'Acompanhamento do campo'],
+  ['biometria', '⚖️', 'Biometria'],
+  ['agua', '💧', 'Água'],
+  ['ocorrencias', '⚠️', 'Ocorrências'],
+  ['insumos', '🧪', 'Insumos'],
+  ['estoque', '📦', 'Estoque', 'Gestão'],
   ['financeiro', '💰', 'Financeiro'],
-  ['lancamentos', '📝', 'Lançamentos'],
+  ['lancamentos', '📝', 'Lançamentos (corrigir)'],
   ['cadastros', '🤝', 'Cadastros'],
   ['configuracoes', '⚙️', 'Configurações'],
 ]
@@ -37,10 +42,11 @@ export function Escritorio({ pagina, setPagina, usuario, online, pendentes, onEn
     <div className="esc">
       <nav className="esc-menu" aria-label="Menu do escritório">
         <div className="esc-marca">🦐 <b>Barra Maricultura</b><small>Escritório</small></div>
-        {MENU.map(([id, ic, nome]) => (
+        {MENU.map(([id, ic, nome, grupo]) => [
+          grupo && <span key={'g' + id} className="esc-grupo">{grupo}</span>,
           <button key={id} className={pagina === id ? 'sel' : ''} aria-current={pagina === id ? 'page' : undefined}
-            onClick={() => setPagina(id)}><span>{ic}</span>{nome}</button>
-        ))}
+            onClick={() => setPagina(id)}><span>{ic}</span>{nome}</button>,
+        ])}
         <div className="esc-rodape">
           <button onClick={onColetor}><span>📱</span>Coletor de campo</button>
           {onSair && <button onClick={onSair}><span>🚪</span>Sair</button>}
@@ -69,6 +75,8 @@ export function SoOnline({ online, children }) {
 
 // ---------- Viveiros e ciclos: quadro de todos os viveiros + formulário do escolhido ----------
 export function PaginaCiclos({ viveiros, sel, onSel, children }) {
+  // em tela estreita o formulário fica embaixo da tabela: rola até ele ao escolher
+  useEffect(() => { if (sel && window.innerWidth < 1100) document.querySelector('.e-ciclo-form')?.scrollIntoView({ behavior: 'smooth' }) }, [sel])
   return (
     <div className="painel e-duas">
       <section className="p-bloco">
@@ -89,7 +97,7 @@ export function PaginaCiclos({ viveiros, sel, onSel, children }) {
         </table></div>
         <p className="p-nota">Clique num viveiro para iniciar o ciclo, povoar, lançar complemento ou corrigir os dados gravados.</p>
       </section>
-      <section className="p-bloco e-form">{children}</section>
+      <section className="p-bloco e-form e-ciclo-form">{children}</section>
     </div>
   )
 }
@@ -165,7 +173,7 @@ export function PlanoTabela({ viveiros, racoes, tratosPadrao, onSalvar, onDetalh
               const ck = v.bandejaHoje?.retirada || v.bandejaOntem?.retirada
               return (
                 <tr key={v.id} className={`${mudou ? 'alterado' : ''} ${mudou && erro ? 'critico' : ''}`}>
-                  <td><b>{v.codigo}</b>{v.planoFuturo && <small className="fonte" title={`plano a partir de ${dataBR(v.planoFuturo.data_inicio)}: ${fmt(v.planoFuturo.kg_dia)} kg/dia`}> futuro</small>}</td>
+                  <td><b>{v.codigo}</b>{v.plano?.padrao && <small className="fonte" title="plano padrão dos primeiros dias (Configurações)"> padrão · dia {v.plano.dia}</small>}{v.planoFuturo && <small className="fonte" title={`plano a partir de ${dataBR(v.planoFuturo.data_inicio)}: ${fmt(v.planoFuturo.kg_dia)} kg/dia`}> futuro</small>}</td>
                   <td className="n">{v.dias}</td>
                   <td className="n">{v.ultimaBio ? fmt(v.ultimaBio.peso_medio_g, 2) : '–'}</td>
                   <td className="n">{v.pl ? mil(v.pl) : '–'}</td>
@@ -206,7 +214,7 @@ export function PlanoTabela({ viveiros, racoes, tratosPadrao, onSalvar, onDetalh
         </div>
         <p className="p-nota">kg/dia é o total do viveiro, incluindo a ração das bandejas. Linhas alteradas ficam destacadas; ao salvar, cada uma vira um plano novo
           que vale a partir da data escolhida (até o próximo plano). Com o mesmo número de tratos, o novo kg/dia é repartido na mesma proporção do plano atual;
-          mudando o número de tratos, a divisão é igual — para dividir à mão, use “detalhar”. Biomassa est. = PL × sobrevivência × último peso.</p>
+          mudando o número de tratos, a divisão é igual — para dividir à mão, use “detalhar”. Viveiros marcados “padrão” estão nos primeiros dias de cultivo e seguem sozinhos o plano padrão (Configurações) dia a dia; alterar a linha cria um plano próprio que passa a valer no lugar do padrão. Biomassa est. = PL × sobrevivência × último peso.</p>
       </section>
       <section className="p-bloco">
         <h2>Ração em estoque pelos planos</h2>
@@ -293,7 +301,7 @@ export function PaginaFinanceiro({ cad, viveiros, produtos, online, onAlterado }
 }
 
 // ---------- Configurações: preço de tabela, impostos, preço da PL, equipe, senha ----------
-export function PaginaConfig({ cad, online, onAlterado, children }) {
+export function PaginaConfig({ cad, racoes = [], online, onAlterado, children }) {
   const tabela = { ...PRECO_PADRAO, ...(cad.config?.preco_venda || {}) }
   const impostoPct = Number(cad.config?.imposto_venda?.pct ?? 0)
   return (
@@ -303,6 +311,7 @@ export function PaginaConfig({ cad, online, onAlterado, children }) {
         <Impostos key={impostoPct} pct={impostoPct} online={online} onSalvo={onAlterado} />
         <PrecoPL key={String(cad.config?.preco_pl_milheiro)} valor={Number(cad.config?.preco_pl_milheiro ?? 14)} online={online} onSalvo={onAlterado} />
       </div>
+      <PlanoPadrao key={JSON.stringify(cad.config?.plano_padrao)} atual={{ ...PLANO_PADRAO, ...(cad.config?.plano_padrao || {}) }} racoes={racoes} online={online} onSalvo={onAlterado} />
       {children}
     </div>
   )
@@ -327,5 +336,85 @@ function PrecoPL({ valor, online, onSalvo }) {
       <p className="p-nota">Usado no custo do ciclo para povoamentos sem lote de PL com nota do Apresenta.me
         (ex.: 300 mil PL × {reais2(valido ? novo : valor)} = {reais2(300 * (valido ? novo : valor))}).</p>
     </section>
+  )
+}
+
+// Plano de ração padrão dos primeiros dias de cultivo: kg/dia por 100 mil PL por faixa de dias
+function PlanoPadrao({ atual, racoes, online, onSalvo }) {
+  const [dias, setDias] = useState(String(atual.dias))
+  const [tratos, setTratos] = useState(Number(atual.tratos) || 4)
+  const [produto, setProduto] = useState(atual.produto_id || '')
+  const [faixas, setFaixas] = useState(() => [...atual.faixas].sort((a, b) => a.dia - b.dia).map((f) => ({ dia: String(f.dia), kg: txt(f.kg) })))
+  const [msg, setMsg] = useState(null)
+  const novo = { dias: Number(dias), tratos, produto_id: produto || null,
+    faixas: faixas.map((f) => ({ dia: Number(f.dia), kg: num(f.kg) })).sort((a, b) => a.dia - b.dia) }
+  const valido = novo.dias >= 1 && novo.dias <= 120 && novo.faixas.length > 0 && novo.faixas[0].dia === 1
+    && novo.faixas.every((f) => Number.isInteger(f.dia) && f.dia >= 1 && f.kg > 0)
+    && new Set(novo.faixas.map((f) => f.dia)).size === novo.faixas.length
+  const mudou = JSON.stringify(novo) !== JSON.stringify({ dias: Number(atual.dias), tratos: Number(atual.tratos) || 4, produto_id: atual.produto_id || null,
+    faixas: [...atual.faixas].map((f) => ({ dia: Number(f.dia), kg: Number(f.kg) })).sort((a, b) => a.dia - b.dia) })
+  const muda = (i, campo, v) => setFaixas((l) => l.map((f, j) => (j === i ? { ...f, [campo]: v } : f)))
+  const fim = (i) => (i + 1 < novo.faixas.length ? novo.faixas[i + 1].dia - 1 : novo.dias)
+  return (
+    <section className="p-bloco">
+      <h2>Plano de ração padrão (primeiros dias de cultivo)</h2>
+      <div className="e-duas e-padrao">
+        <div>
+          <div className="p-preco-campos">
+            <label>Vale nos primeiros<span><input value={dias} onChange={(e) => setDias(e.target.value.replace(/\D/g, ''))} inputMode="numeric" /> dias</span></label>
+            <label>Tratos por dia<span><select value={tratos} onChange={(e) => setTratos(Number(e.target.value))}>{[2, 3, 4, 5, 6].map((n) => <option key={n}>{n}</option>)}</select></span></label>
+            <label>Ração<span><select value={produto} onChange={(e) => setProduto(e.target.value)}>
+              <option value="">a do último trato</option>
+              {racoes.filter((p) => p.ativo !== false || p.id === produto).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></span></label>
+          </div>
+          <table className="e-plano"><thead><tr><th>A partir do dia</th><th>Até o dia</th><th className="n">kg/dia por 100 mil PL</th><th className="n">300 mil PL</th><th className="n">400 mil PL</th><th /></tr></thead>
+            <tbody>{faixas.map((f, i) => {
+              const k = num(f.kg)
+              return (
+                <tr key={i}>
+                  <td><input className="e-num" value={f.dia} onChange={(e) => muda(i, 'dia', e.target.value.replace(/\D/g, ''))} inputMode="numeric" aria-label="a partir do dia" /></td>
+                  <td>{novo.faixas[i] && novo.faixas.indexOf(novo.faixas.find((x) => x.dia === Number(f.dia))) === i ? fim(i) : ''}</td>
+                  <td className="n"><input className="e-num" value={f.kg} onChange={(e) => muda(i, 'kg', e.target.value)} inputMode="decimal" aria-label="kg por 100 mil PL" /></td>
+                  <td className="n">{k > 0 ? `${fmt(k * 3, 1)} kg` : '–'}</td>
+                  <td className="n">{k > 0 ? `${fmt(k * 4, 1)} kg` : '–'}</td>
+                  <td>{faixas.length > 1 && <button type="button" className="e-link" onClick={() => setFaixas((l) => l.filter((_, j) => j !== i))}>remover</button>}</td>
+                </tr>)
+            })}</tbody></table>
+          <div className="e-acoes">
+            <button type="button" onClick={() => setFaixas((l) => [...l, { dia: String(Math.min(novo.dias, (novo.faixas.at(-1)?.dia || 0) + 7)), kg: '' }])}>+ Faixa</button>
+            {mudou && <button className="e-primario" disabled={!valido || (!online && !MODO_DEMO)} onClick={async () => {
+              setMsg(null)
+              try { await salvarConfig('plano_padrao', novo); setMsg('Plano padrão salvo.'); onSalvo?.() } catch (e) { setMsg('Não foi possível salvar: ' + (e.message || e)) }
+            }}>Salvar plano padrão</button>}
+            {mudou && !valido && <span className="p-msg ruim">A primeira faixa começa no dia 1; dias diferentes e kg maior que zero.</span>}
+            {msg && <span className="p-msg">{msg}</span>}
+          </div>
+        </div>
+        <GraficoPadrao pp={valido ? novo : atual} />
+      </div>
+      <p className="p-nota">Do povoamento até o dia {valido ? novo.dias : atual.dias}, a ração prevista de cada viveiro = kg da faixa × PL povoadas ÷ 100 mil,
+        dividida igualmente pelos tratos, e muda sozinha a cada faixa (o arraçoador vê o previsto no coletor). Se o gestor lançar um plano para o viveiro
+        depois do povoamento, esse plano passa a valer no lugar do padrão. Depois do período padrão, vale o plano lançado pelo gestor (pela sobra das bandejas).
+        Valores iniciais = mediana do arraçoamento de abr–nov/2026 (Meu Pescado).</p>
+    </section>
+  )
+}
+
+function GraficoPadrao({ pp }) {
+  const W = 420, H = 180, m = { l: 34, r: 10, t: 10, b: 24 }
+  const n = Number(pp.dias)
+  const pts = Array.from({ length: n }, (_, i) => ({ d: i + 1, k: kgPadrao(pp, i + 1) * 3 }))
+  const max = Math.max(1, ...pts.map((p) => p.k))
+  const x = (d) => m.l + ((d - 1) / Math.max(1, n - 1)) * (W - m.l - m.r)
+  const y = (k) => H - m.b - (k / max) * (H - m.t - m.b)
+  return (
+    <figure className="e-grafico">
+      <figcaption>kg/dia previstos para 300 mil PL</figcaption>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Plano padrão em kg por dia">
+        {[0, 0.5, 1].map((f) => <g key={f}><line x1={m.l} x2={W - m.r} y1={y(max * f)} y2={y(max * f)} className="grade" /><text x={m.l - 6} y={y(max * f) + 4} textAnchor="end">{fmt(max * f, 0)}</text></g>)}
+        {pts.map((p) => <rect key={p.d} x={x(p.d) - 4} y={y(p.k)} width={8} height={H - m.b - y(p.k)} className="barra"><title>{`dia ${p.d}: ${fmt(p.k, 1)} kg`}</title></rect>)}
+        {[1, Math.round(n / 2), n].map((d) => <text key={d} x={x(d)} y={H - 6} textAnchor="middle">{d}</text>)}
+      </svg>
+    </figure>
   )
 }

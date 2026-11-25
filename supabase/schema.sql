@@ -503,6 +503,11 @@ alter table produtos add column if not exists custo_inicial numeric(12,4);      
 alter table estoque_movimentos add column if not exists apresentame_id bigint;     -- nota do Apresenta.me desta entrada
 alter table estoque_movimentos add column if not exists valor numeric(14,2);       -- R$ desta entrada (parte da nota)
 insert into configuracoes(chave, valor) values ('preco_pl_milheiro', '14') on conflict (chave) do nothing;
+-- plano de ração padrão dos primeiros dias de cultivo (kg/dia por 100 mil PL, por faixa de dias desde o povoamento);
+-- valores iniciais = mediana do arraçoamento de abr–nov/2026 (Meu Pescado). O gestor altera em Configurações.
+insert into configuracoes(chave, valor) values ('plano_padrao',
+  '{"dias":30,"tratos":4,"produto_id":null,"faixas":[{"dia":1,"kg":1},{"dia":8,"kg":2},{"dia":14,"kg":3},{"dia":20,"kg":4},{"dia":26,"kg":5.33},{"dia":28,"kg":5.75},{"dia":30,"kg":7}]}')
+  on conflict (chave) do nothing;
 
 -- destino que o gestor deu a cada nota (a nota em si vem do Apresenta.me e é regravada a cada sincronização)
 create table if not exists financeiro_destino (
@@ -636,7 +641,7 @@ begin
   -- tabela de preço de venda: o gestor também pode alterar
   drop policy if exists "configuracoes_preco_gestor" on configuracoes;
   create policy "configuracoes_preco_gestor" on configuracoes for update to authenticated
-    using (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro','imposto_venda')) with check (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro','imposto_venda'));
+    using (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro','imposto_venda','plano_padrao')) with check (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro','imposto_venda','plano_padrao'));
   -- tabelas do gestor: só o admin apaga
   foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior','estimativas_sobrevivencia','planos_racao','produtos','estoque_movimentos'] loop
     execute format('drop policy if exists "%1$s_admin_del" on %1$I', t);

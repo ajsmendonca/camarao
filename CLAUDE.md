@@ -15,6 +15,12 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - **Coletor de campo** (`src/App.jsx`, celular, offline): Ração (trato/bandejas), Biometria, Água, Ocorrência, Insumos,
   Estoque (só saldo) e os cartões dos viveiros. Perfil campo só vê o coletor.
 - **Escritório** (`src/Escritorio.jsx`, gestor/admin; menu lateral, que vira menu horizontal no celular < 900 px):
+  Menu em 3 grupos — **Produção**, **Acompanhamento do campo**, **Gestão** (25/11/2026).
+  **Acompanhamento do campo** (`src/Acompanhamento.jsx`; lê do banco, filtro por viveiro e período 7/15/30/90 dias/ciclo; formulário de
+  lançamento ao lado): **Ração** (resumo por viveiro: plano, hoje, % do plano, tratos, ontem, média 7 d, bandejas, consumida, FCA;
+  matriz dia × viveiro do colocado com letra Z/P/M das bandejas; por viveiro: gráfico colocado × consumido, bandejas e tratos),
+  **Biometria** (resumo, ganho g/sem, curva de crescimento de todos, lista), **Água** (última leitura, OD mínimo, gráfico por parâmetro,
+  lista com fora da faixa em vermelho), **Ocorrências** (mortalidade e % das PL, por tipo, lista), **Insumos** (matriz produto × viveiro, lista).
   Painel · Viveiros e ciclos (tabela de todos + formulário do escolhido) · Plano de ração (**todos os viveiros lado a lado,
   editável**: sobrevivência, ração, kg/dia, ±%, tratos, vale a partir de, recado; salva só as linhas alteradas; mesmo nº
   de tratos → reparte na proporção do plano atual; "detalhar" abre o formulário com divisão manual) · Despescas
@@ -138,6 +144,12 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   **Impostos est.** e **Resultado est. = venda − impostos − custo**; indicador **"Resultado estimado"** no topo com a conta.
   Atenção: COFINS/ICMS pagos no Apresenta.me entram no custo comum (rateio) — se forem impostos da venda, classificar como
   "Não é custo da produção" para não contar duas vezes.
+- **Plano de ração padrão** (decidido em 25/11/2026: "nos primeiros 30 dias o plano não muda; depois analisa a sobra"):
+  `configuracoes.plano_padrao` = {dias: 30, tratos: 4, produto_id, faixas: [{dia, kg por 100 mil PL}]}; valores iniciais = mediana do
+  arraçoamento abr–nov/2026: dias 1–7 → 1; 8–13 → 2; 14–19 → 3; 20–25 → 4; 26–27 → 5,33; 28–29 → 5,75; 30 → 7 kg/100 mil PL.
+  Em cultivo, do dia 1 ao dia `dias` desde o povoamento, o plano vigente é o padrão (kg × PL ÷ 100 mil, dividido igualmente), calculado no
+  app (`viveiros` em App.jsx; `plano.padrao = true`), a não ser que exista plano lançado com início ≥ povoamento (aí vale ele). Depois do
+  período, vale o plano do gestor. Gestor/admin editam em Configurações (faixas, dias, tratos, ração; gráfico para 300 mil PL).
 - **Ração de hoje/ontem e tratos feitos** somam os tratos deste aparelho + os do servidor (`cad.tratos`, últimos 2 dias,
   de outros aparelhos ou importados), sem repetir id.
 - **Atualização automática** (24/11/2026): `src/main.jsx` registra o service worker (`virtual:pwa-register`, autoUpdate,

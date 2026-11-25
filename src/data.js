@@ -86,7 +86,7 @@ function cadastroDemo() {
   const previsoes = [{ id: 'demo-pv1', ciclo_id: 'demo-c8', cliente_id: 'demo-cl1', data_prevista: diasAtras(-5), biomassa_prev_kg: 2500,
     peso_medio_prev_g: 13.5, preco_kg_prev: 28, status: 'aberta', observacao: null }]
   return { versao: 6, clientes, previsoes, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
-    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], preco_venda: { ...PRECO_PADRAO }, imposto_venda: { pct: 0 } } }
+    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], preco_venda: { ...PRECO_PADRAO }, imposto_venda: { pct: 0 }, plano_padrao: PLANO_PADRAO } }
 }
 
 // ---------- Cadastro (viveiros, ciclos ativos, configuração) ----------
@@ -123,7 +123,7 @@ export async function carregarCadastro() {
         supabase.from('racao').select('id, ciclo_id, data, hora, trato, kg').gte('data', desde).order('data', { ascending: false }).limit(500),
       ])
       if (v.error || c.error) throw v.error || c.error
-      const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'] }
+      const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], plano_padrao: PLANO_PADRAO }
       ;(cfg.data || []).forEach((r) => (config[r.chave] = r.valor))
       cad = {
         carregado_em,
@@ -222,6 +222,16 @@ export async function equipe(acao, dados = {}) {
 
 // Preço de venda estimado pela tabela: base no peso de referência, ± passo por grama (ex.: R$ 20 a 10 g, R$ 1/g)
 export const PRECO_PADRAO = { base: 20, peso_ref: 10, passo: 1 }
+// plano de ração padrão dos primeiros dias de cultivo: kg/dia por 100 mil PL, por faixa (a partir do dia X desde o povoamento).
+// Padrão = mediana do arraçoamento de abr–nov/2026; o gestor altera em Configurações (configuracoes.plano_padrao).
+export const PLANO_PADRAO = { dias: 30, tratos: 4, produto_id: null, faixas: [{ dia: 1, kg: 1 }, { dia: 8, kg: 2 }, { dia: 14, kg: 3 }, { dia: 20, kg: 4 }, { dia: 26, kg: 5.33 }, { dia: 28, kg: 5.75 }, { dia: 30, kg: 7 }] }
+// kg por 100 mil PL no dia de cultivo `dia` (null fora do período padrão)
+export const kgPadrao = (pp, dia) => {
+  const p = { ...PLANO_PADRAO, ...(pp || {}) }
+  if (!(dia >= 1) || dia > Number(p.dias)) return null
+  const f = [...(p.faixas || [])].sort((a, b) => b.dia - a.dia).find((x) => x.dia <= dia)
+  return f ? Number(f.kg) : null
+}
 export const precoTabela = (cfg, peso) => {
   const t = { ...PRECO_PADRAO, ...(cfg || {}) }
   return peso > 0 ? Math.max(0, Number(t.base) + (peso - Number(t.peso_ref)) * Number(t.passo)) : null

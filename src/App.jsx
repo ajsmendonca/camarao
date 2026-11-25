@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   carregarCadastro, listarLancamentos, adicionarLancamento, excluirLancamento, uuid,
   sincronizar, getOperador, setOperador, hoje, agora, MODO_DEMO, resetarDemo, supabase,
-  emailDoLogin, normalizaLogin, sair, equipe, precoTabela,
+  emailDoLogin, normalizaLogin, sair, equipe, precoTabela, kgPadrao, PLANO_PADRAO,
 } from './data'
 import Painel from './Painel'
 import Registros from './Registros'
 import Cadastros from './Cadastros'
+import { PaginaRacao, PaginaBiometria, PaginaAgua, PaginaOcorrencias, PaginaInsumos } from './Acompanhamento'
 import { Escritorio, MENU, SoOnline, PaginaCiclos, PlanoTabela, PaginaEstoque, PaginaFinanceiro, PaginaConfig } from './Escritorio'
 
 const num = (s) => {
@@ -177,7 +178,21 @@ export default function App() {
         ...meus.filter((l) => l.tipo === 'plano').map((l) => ({ id: l.id, ...l.dados, criado_em: l.criado_em })),
         ...(cad.planos || []).filter((x) => x.ciclo_id === ciclo.id && !meus.some((l) => l.id === x.id)),
       ].sort((a, b) => (b.data_inicio + (b.criado_em || '')).localeCompare(a.data_inicio + (a.criado_em || '')))
-      const plano = planos.find((x) => x.data_inicio <= hoje()) || null
+      const planoManual = planos.find((x) => x.data_inicio <= hoje()) || null
+      // primeiros dias de cultivo: vale o plano padrão (kg por 100 mil PL × PL povoadas), a não ser que o gestor
+      // tenha lançado um plano depois do povoamento (que passa a valer no lugar do padrão)
+      const pp = { ...PLANO_PADRAO, ...(cad.config.plano_padrao || {}) }
+      const diaCultivo = ciclo.data_povoamento ? diasEntre(ciclo.data_povoamento, hoje()) : 0
+      const plPadrao = (res.pl_quantidade || 0) + meus.filter((l) => l.tipo === 'povoamento' && pendente(l)).reduce((s, l) => s + l.dados.pl_quantidade, 0)
+      const kp = ciclo.status === 'em_cultivo' && (!planoManual || planoManual.data_inicio < ciclo.data_povoamento) ? kgPadrao(pp, diaCultivo) : null
+      let plano = planoManual
+      if (kp != null && plPadrao > 0) {
+        const kg = Math.round(kp * plPadrao / 100000 * 10) / 10, n = Number(pp.tratos) || 4
+        plano = { id: null, padrao: true, dia: diaCultivo, ciclo_id: ciclo.id, data_inicio: hoje(), kg_dia: kg,
+          produto_id: pp.produto_id || planoManual?.produto_id || null, sobrevivencia_est: planoManual?.sobrevivencia_est ?? null,
+          tratos: Array.from({ length: n }, (_, i) => ({ trato: i + 1, kg: Math.round(kg / n * 10) / 10 })),
+          observacao: `Plano padrão (dia ${diaCultivo} de ${pp.dias})` }
+      }
       const planoFuturo = planos.find((x) => x.data_inicio > hoje()) || null
       const distrib = [
         ...meus.filter((l) => l.tipo === 'biometria' && l.dados.tipo === 'classes').map((l) => l.dados),
@@ -304,6 +319,12 @@ export default function App() {
                 <section className="p-bloco e-form e-estreito"><h2>Plano detalhado (divisão por trato, recado)</h2>
                   <FormPlano vidInicial={sel} viveiros={viveiros} racoes={racoes} tratosPadrao={tratosPadrao} onSalvar={salvar} /></section></div>
             : <PlanoTabela viveiros={viveiros} racoes={racoes} tratosPadrao={tratosPadrao} onSalvar={salvar} onDetalhar={setSel} />)}
+          {pagina === 'racao' && <PaginaRacao viveiros={viveiros} produtos={produtos} online={online}>
+            <RacaoEscritorio viveiros={viveiros} racoes={racoes} tratos={tratosPadrao} onSalvar={salvar} /></PaginaRacao>}
+          {pagina === 'biometria' && <PaginaBiometria viveiros={viveiros} online={online}><FormBiometria viveiros={viveiros} onSalvar={salvar} /></PaginaBiometria>}
+          {pagina === 'agua' && <PaginaAgua viveiros={viveiros} online={online}><FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} /></PaginaAgua>}
+          {pagina === 'ocorrencias' && <PaginaOcorrencias viveiros={viveiros} online={online}><FormOcorrencia viveiros={viveiros} onSalvar={salvar} /></PaginaOcorrencias>}
+          {pagina === 'insumos' && <PaginaInsumos viveiros={viveiros} produtos={produtos} online={online}><FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} /></PaginaInsumos>}
           {pagina === 'despescas' && <div className="painel"><section className="p-bloco e-form e-estreito">
             <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} tabela={cad.config.preco_venda} /></section></div>}
           {pagina === 'estoque' && <PaginaEstoque produtos={produtos} viveiros={viveiros} online={online}>
@@ -313,7 +334,7 @@ export default function App() {
             <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin} onAlterado={recarregaCad} /></section></div></SoOnline>}
           {pagina === 'cadastros' && <SoOnline online={online}><div className="painel"><section className="p-bloco e-form e-estreito">
             <Cadastros online={online} onAlterado={recarregaCad} /></section></div></SoOnline>}
-          {pagina === 'configuracoes' && <PaginaConfig cad={cad} online={online} onAlterado={recarregaCad}>
+          {pagina === 'configuracoes' && <PaginaConfig cad={cad} racoes={racoes} online={online} onAlterado={recarregaCad}>
             <div className="p-grade">
               {admin && !MODO_DEMO && <section className="p-bloco e-form"><h2>Equipe</h2><TelaEquipe online={online} /></section>}
               {!MODO_DEMO && <section className="p-bloco e-form"><h2>Minha senha</h2><TrocarSenha online={online} onFim={() => {}} /></section>}
@@ -360,6 +381,14 @@ export default function App() {
       {aviso && <div className={`aviso ${aviso.tipo}`} role="status">{aviso.texto}</div>}
     </div>
   )
+}
+
+// escritório: trato a lanço e bandejas no mesmo quadro (no coletor são telas separadas)
+function RacaoEscritorio({ viveiros, racoes, tratos, onSalvar }) {
+  const [modo, setModo] = useState('trato')
+  return modo === 'trato'
+    ? <FormRacao viveiros={viveiros} racoes={racoes} tratos={tratos} onSalvar={onSalvar} irCheck={() => setModo('check')} />
+    : <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={onSalvar} irTrato={() => setModo('trato')} />
 }
 
 // ------------------------------------------------------------------
@@ -437,7 +466,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, onEscritorio }) {
                     <b className={v.uniformidade.cv > 30 ? 'cv-ruim' : v.uniformidade.cv <= 20 ? 'cv-boa' : ''}>
                       CV {fmt(v.uniformidade.cv, 0)}% <small>{dataBR(v.uniformidade.data).slice(0, 5)}</small></b></div>
                 )}
-                <div className="linha"><span>Ração hoje</span><b>{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''} kg</b></div>
+                <div className="linha"><span>Ração hoje{v.plano?.padrao && <small> · padrão</small>}</span><b>{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''} kg</b></div>
                 {v.plano && <div className="progresso"><i style={{ width: `${Math.min(100, (v.kgHoje / v.plano.kg_dia) * 100)}%` }} /></div>}
                 <div className="linha"><span>{v.bandejaAberta ? 'Retirar' : 'Bandejas'}</span>
                   {v.bandejaAberta
