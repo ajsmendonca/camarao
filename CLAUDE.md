@@ -11,9 +11,22 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - Stack preferida: **Supabase + Vercel + GitHub** (ele sobe arquivos no GitHub pelo navegador, sem git local).
 
 ## Arquitetura
+**Duas partes no mesmo endereço e login (feito em 25/11/2026, a pedido do Antônio):**
+- **Coletor de campo** (`src/App.jsx`, celular, offline): Ração (trato/bandejas), Biometria, Água, Ocorrência, Insumos,
+  Estoque (só saldo) e os cartões dos viveiros. Perfil campo só vê o coletor.
+- **Escritório** (`src/Escritorio.jsx`, gestor/admin; menu lateral, que vira menu horizontal no celular < 900 px):
+  Painel · Viveiros e ciclos (tabela de todos + formulário do escolhido) · Plano de ração (**todos os viveiros lado a lado,
+  editável**: sobrevivência, ração, kg/dia, ±%, tratos, vale a partir de, recado; salva só as linhas alteradas; mesmo nº
+  de tratos → reparte na proporção do plano atual; "detalhar" abre o formulário com divisão manual) · Despescas
+  (previsões e lançamento) · Estoque (tabela com saldo, mínimo, dias pelo plano, **preço médio** e valor + Entrada/Contagem/
+  Produto) · Financeiro (custo dos ciclos abertos + notas do Apresenta.me) · Lançamentos (Histórico/Registros) ·
+  Cadastros (clientes, fornecedores, sincronizar) · Configurações (preço de tabela, impostos, **preço da PL sem nota**,
+  Equipe (admin), minha senha). Endereço `…/#e-<página>` (ex.: `#e-plano`; o antigo `#painel` vale) sobrevive ao recarregar.
+- Gestor/admin alternam: botão **"Escritório"** no coletor e **"Coletor de campo"** no menu. A escolha fica guardada no
+  aparelho (localStorage `modo`); sem escolha, abre o escritório em tela ≥ 900 px e o coletor no celular.
+  No escritório, salvar mantém a página (remonta com os dados novos); lançamentos também vão pela fila offline.
 1. **App de campo** (este repositório) — PWA React/Vite, funciona offline. Pronto (protótipo).
-2. **Painel do escritório** — v1 feito em 24/11/2026 (`src/Painel.jsx`; gestor; botão "Painel do escritório" na tela
-   inicial ou endereço `…/#painel`, que sobrevive ao recarregar). Precisa de sinal (busca o histórico no Supabase via
+2. **Painel do escritório** — v1 feito em 24/11/2026 (`src/Painel.jsx`; página Painel do escritório). Precisa de sinal (busca o histórico no Supabase via
    `carregarPainel` em `data.js`; na demonstração usa séries de exemplo). Mostra: indicadores (viveiros em cultivo,
    biomassa estimada, **valor de venda estimado**, ração hoje × previsto, despesca prevista em 30 dias em kg e R$, ração em estoque e dias pelo plano);
    alertas (≥110 dias crítico, >90 atenção, OD<3, muita sobra/zerou, sem biometria ou >10 dias, sem plano, sem

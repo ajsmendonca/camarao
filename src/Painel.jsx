@@ -1,9 +1,9 @@
 // Painel do escritório (gestor, tela grande): situação de todos os viveiros, alertas, crescimento,
 // ração diária, previsões de despesca, estoque e ciclos encerrados.
-// Os custos do Apresenta.me entram numa próxima etapa.
+// Custos e notas do Apresenta.me ficam na página Financeiro (Escritorio.jsx).
 import { useEffect, useState, useCallback } from 'react'
 import { carregarPainel, hoje, MODO_DEMO, precoTabela, salvarPrecoTabela, salvarConfig, PRECO_PADRAO } from './data'
-import { CustosViveiros, NotasApresentame, custoTotal } from './Financeiro'
+import { custoTotal } from './Financeiro'
 
 const fmt = (n, d = 1) => n == null || Number.isNaN(n) ? '–'
   : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -14,7 +14,7 @@ const reais = (n) => n == null ? '–' : n.toLocaleString('pt-BR', { style: 'cur
 const reais2 = (n) => n == null ? '–' : Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const RESULT = { zerou: 'Zerou', pouca_sobra: 'Pouca sobra', muita_sobra: 'Muita sobra' }
 
-export default function Painel({ cad, viveiros, produtos, previsoes, clientes, online, onVoltar, onAlterado }) {
+export default function Painel({ cad, viveiros, produtos, previsoes, clientes, online }) {
   const [serie, setSerie] = useState(null)
   const [erro, setErro] = useState(null)
   const [atualizado, setAtualizado] = useState(null)
@@ -66,8 +66,6 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
   const totalResultado = totalVenda && totalCusto ? totalVenda - totalImposto - totalCusto : null
   // resultado por dia do ciclo (desde o início da preparação); no total, a soma dos viveiros
   const totalPorDia = cultivo.reduce((s, v) => { const r = resultadoDe(valorVenda(v), custoDe(v)); return s + (r != null && v.diasCiclo > 0 ? r / v.diasCiclo : 0) }, 0)
-  const recarregarTudo = async () => { await carregar(); onAlterado?.() }
-  const primeiraNota = (serie?.notas || []).reduce((m, n) => (!m || (n.competencia || n.data) < m ? (n.competencia || n.data) : m), null)
 
   // ---- indicadores do topo
   const biomassaTotal = cultivo.reduce((s, v) => s + (v.biomassaPrevista || 0), 0)
@@ -110,16 +108,10 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
 
   return (
     <div className="painel">
-      <header className="p-topo">
-        <div>
-          <h1>Painel · Barra Maricultura</h1>
-          <small>{dataBR(hoje())}{atualizado ? ` · atualizado às ${atualizado.toTimeString().slice(0, 5)}` : ''}{MODO_DEMO ? ' · demonstração (séries de exemplo)' : ''}</small>
-        </div>
-        <div className="p-botoes">
-          <button onClick={carregar} disabled={!online && !MODO_DEMO}>Atualizar</button>
-          <button onClick={onVoltar}>Voltar ao app</button>
-        </div>
-      </header>
+      <div className="e-acoes">
+        <button onClick={carregar} disabled={!online && !MODO_DEMO}>Atualizar</button>
+        <span className="p-msg">{atualizado ? `Atualizado às ${atualizado.toTimeString().slice(0, 5)}` : ''}{MODO_DEMO ? ' · demonstração (séries de exemplo)' : ''}</span>
+      </div>
       {erro && <p className="p-erro">Não foi possível carregar o histórico: {erro}</p>}
       {!online && !MODO_DEMO && <p className="p-erro">Sem internet: o painel mostra só o que está guardado neste aparelho.</p>}
 
@@ -137,10 +129,6 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         <Kpi titulo="Ração em estoque" valor={`${fmt(saldoRacao, 0)} kg`} nota={diasRacao != null ? `~${fmt(diasRacao, 0)} dias pelo plano` : '—'} />
       </section>
 
-      <div className="p-grade">
-        <TabelaPreco tabela={tabela} online={online} onSalvo={onAlterado} />
-        <Impostos pct={impostoPct} online={online} onSalvo={onAlterado} />
-      </div>
 
       <div className="p-grade">
         <section className="p-bloco p-alertas">
@@ -219,13 +207,9 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
           Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>tab.</b> = preço de tabela pelo último peso
           ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.
-          Impostos est. = {fmt(impostoPct, 2)}% do valor de venda. Resultado est. = valor de venda − impostos − custo até hoje (detalhes do custo no quadro abaixo).
+          Impostos est. = {fmt(impostoPct, 2)}% do valor de venda. Resultado est. = valor de venda − impostos − custo até hoje (detalhes do custo em Financeiro).
           Resultado/dia = resultado est. ÷ dias do ciclo (desde o início da preparação); no total, a soma dos viveiros.</p>
       </section>
-      {serie && <CustosViveiros viveiros={viveiros} custos={custos} primeiraNota={primeiraNota} />}
-      {serie && !serie.demo && <NotasApresentame notas={serie.notas} destinos={serie.destinos} entradasNota={serie.entradasNota}
-        viveiros={viveiros} produtos={produtos} usuario={cad.nome} onAlterado={recarregarTudo} />}
-
       <section className="p-bloco">
         <h2>Crescimento e ração por viveiro</h2>
         {!serie && !erro && <p className="p-vazio">Carregando…</p>}
@@ -256,7 +240,6 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         </section>
       </div>
       <Historico encerrados={serie?.encerrados || []} carregado={!!serie} />
-      <p className="p-nota">Custos por viveiro e resultado por ciclo entram com a integração do Apresenta.me.</p>
     </div>
   )
 }
@@ -384,7 +367,7 @@ function Historico({ encerrados, carregado }) {
 }
 
 // Preço de tabela (estimativa): base no peso de referência, ± passo por grama. Gestor/admin alteram.
-function TabelaPreco({ tabela, online, onSalvo }) {
+export function TabelaPreco({ tabela, online, onSalvo }) {
   const txt = (n) => String(n).replace('.', ',')
   const [d, setD] = useState({ base: txt(tabela.base), peso_ref: txt(tabela.peso_ref), passo: txt(tabela.passo) })
   const [msg, setMsg] = useState(null)
@@ -412,7 +395,7 @@ function TabelaPreco({ tabela, online, onSalvo }) {
 }
 
 // Impostos estimados sobre a venda (% do valor de venda estimado). Gestor/admin alteram.
-function Impostos({ pct, online, onSalvo }) {
+export function Impostos({ pct, online, onSalvo }) {
   const [d, setD] = useState(String(pct).replace('.', ','))
   const [msg, setMsg] = useState(null)
   const novo = Number(String(d).replace(',', '.'))

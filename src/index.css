@@ -384,3 +384,50 @@ section .secao { margin-top: 6px; }
 .p-linha-ent { display: flex; flex-wrap: wrap; gap: 6px; }
 .p-linha-ent select { min-width: 240px; } .p-linha-ent input { width: 150px; }
 .p-erro-txt { color: var(--erro) !important; font-weight: 600; } .p-ok-txt { color: var(--ok) !important; font-weight: 600; }
+
+/* ---------- Escritório: menu lateral + páginas ---------- */
+.esc { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 100vh; }
+.esc-menu { position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+  padding: 14px 10px; background: var(--mar-2); color: #fff; }
+.esc-marca { display: flex; flex-direction: column; padding: 4px 10px 14px; font-size: 22px; line-height: 1.25; }
+.esc-marca b { font-size: 16px; } .esc-marca small { font-size: 12px; opacity: .7; }
+.esc-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 9px;
+  background: transparent; color: #fff; font-size: 15px; text-align: left; }
+.esc-menu button span { width: 22px; text-align: center; }
+.esc-menu button:hover { background: rgba(255,255,255,.08); }
+.esc-menu button.sel { background: rgba(255,255,255,.18); font-weight: 700; }
+.esc-rodape { margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15); display: flex; flex-direction: column; gap: 2px; }
+.esc-corpo { min-width: 0; display: flex; flex-direction: column; }
+.esc-topo { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--mar); color: #fff; }
+.esc-conteudo { padding: 0 4px 32px; }
+.esc-conteudo .painel { max-width: 1500px; margin: 0; }
+.e-duas { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(360px, 1fr); align-items: start; }
+.e-form .form { gap: 14px; }
+.e-estreito { max-width: 620px; }
+.e-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.e-acoes button, .e-pct button, .e-link { padding: 8px 14px; border-radius: 8px; background: var(--branco); border: 1px solid var(--linha); color: var(--tinta); font-weight: 600; }
+.e-acoes button.e-primario { background: var(--camarao); border-color: var(--camarao); color: #fff; }
+.e-acoes button:disabled { opacity: .5; cursor: default; }
+.painel tr.clicavel { cursor: pointer; } .painel tr.clicavel:hover td { background: #f6f3ec; }
+.painel tr.sel td { background: var(--camarao-claro); }
+.painel tr.alterado td { background: #fff6e0; }
+.e-plano input, .e-plano select { font: inherit; font-size: 14px; padding: 5px 6px; border: 1px solid var(--linha); border-radius: 6px; background: #fff; }
+.e-plano .e-num { width: 72px; text-align: right; }
+.e-plano .e-txt { width: 180px; }
+.e-pct { display: flex; gap: 3px; } .e-pct button { padding: 4px 6px; font-size: 12px; }
+.e-link { padding: 4px 8px; font-size: 13px; }
+.e-check { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--cinza); }
+.p-msg.ruim { color: var(--erro); font-weight: 600; }
+@media (max-width: 1100px) { .e-duas { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .esc { grid-template-columns: 1fr; }
+  .esc-menu { position: sticky; top: 0; z-index: 6; height: auto; flex-direction: row; overflow-x: auto; padding: 6px; gap: 4px; }
+  .esc-marca { display: none; }
+  .esc-menu button { width: auto; white-space: nowrap; padding: 8px 10px; font-size: 14px; }
+  .esc-rodape { margin: 0; padding: 0 0 0 6px; border: 0; border-left: 1px solid rgba(255,255,255,.15); flex-direction: row; }
+  .esc-topo { position: static; padding: 10px 14px; }
+}
+.e-plano select { max-width: 190px; }
+.e-duas { grid-template-columns: minmax(0, 1.5fr) minmax(340px, 1fr); }
+.esc { background: linear-gradient(to right, var(--mar-2) 230px, var(--areia) 230px); }
+@media (max-width: 900px) { .esc { background: var(--areia); } }

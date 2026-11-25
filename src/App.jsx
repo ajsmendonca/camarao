@@ -7,6 +7,7 @@ import {
 import Painel from './Painel'
 import Registros from './Registros'
 import Cadastros from './Cadastros'
+import { Escritorio, MENU, SoOnline, PaginaCiclos, PlanoTabela, PaginaEstoque, PaginaFinanceiro, PaginaConfig } from './Escritorio'
 
 const num = (s) => {
   if (s === '' || s == null) return null
@@ -53,12 +54,30 @@ export default function App() {
   const [cad, setCad] = useState(null)
   const [lanc, setLanc] = useState([])
   const [operador, setOp] = useState(undefined)
-  // o painel do escritório também abre direto pelo endereço .../#painel
-  const [tela, setTelaBase] = useState(() => (location.hash === '#painel' ? 'painel' : 'inicio'))
+  // duas partes: coletor de campo (celular, offline) e escritório (menu lateral; gestor/admin).
+  // O escritório abre pelo endereço .../#e-<página> (o antigo #painel também vale) e sobrevive ao recarregar.
+  const paginaDoHash = () => {
+    const h = location.hash.replace('#', '')
+    if (h === 'painel') return 'painel'
+    return h.startsWith('e-') && MENU.some((m) => m[0] === h.slice(2)) ? h.slice(2) : null
+  }
+  const [tela, setTelaBase] = useState('inicio')
+  const [pagina, setPaginaBase] = useState(() => paginaDoHash() || 'painel')
+  const [modo, setModoBase] = useState(() => {
+    if (paginaDoHash()) return 'escritorio'
+    try { const m = localStorage.getItem('modo'); if (m === 'campo' || m === 'escritorio') return m } catch { /* sem armazenamento */ }
+    return window.innerWidth >= 900 ? 'escritorio' : 'campo'
+  })
+  const [chave, setChave] = useState(0)          // remonta a página do escritório depois de salvar
+  const [sel, setSel] = useState(null)           // viveiro escolhido em Ciclos / Plano (detalhar)
+  const setModo = useCallback((m) => {
+    setModoBase(m)
+    try { localStorage.setItem('modo', m) } catch { /* sem armazenamento */ }
+  }, [])
+  const setPagina = useCallback((p) => { setPaginaBase(p); setSel(null); setChave((k) => k + 1); history.replaceState(null, '', '#e-' + p); window.scrollTo(0, 0) }, [])
   const setTela = useCallback((t) => {
     setTelaBase(t)
-    if (t === 'painel') history.replaceState(null, '', '#painel')
-    else if (location.hash) history.replaceState(null, '', location.pathname + location.search)
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search)
   }, [])
   const [online, setOnline] = useState(navigator.onLine)
   const [aviso, setAviso] = useState(null)
@@ -82,7 +101,7 @@ export default function App() {
   useEffect(() => {
     if (!logado) return
     (async () => {
-      const c = await carregarCadastro(); setCad(c); setTelaBase((t) => (t === 'painel' && c?.perfil === 'gestor' ? 'painel' : 'inicio'))
+      const c = await carregarCadastro(); setCad(c); setTelaBase('inicio')
       // com login, quem lança é o usuário logado; o nome digitado só existe na demonstração
       setOp(MODO_DEMO ? (await getOperador()) || null : c?.nome || 'Usuário'); await recarregar(); sync()
     })()
@@ -185,7 +204,8 @@ export default function App() {
         ultimaBio: bios[0] || null,
         uniformidade: distrib ? { cv: cvClasses(distrib.classes), data: distrib.data } : null,
         plano, planoFuturo,
-        ultimoProduto: meus.find((l) => l.tipo === 'racao')?.dados.produto_id || plano?.produto_id || null,
+        ultimoProduto: meus.find((l) => l.tipo === 'racao')?.dados.produto_id
+          || [...tratosCiclo].sort((x, y) => (y.data + (y.hora || '')).localeCompare(x.data + (x.hora || '')))[0]?.produto_id || plano?.produto_id || null,
         racaoOntem: tratosCiclo.filter((t) => t.data === diasAntes(1)).reduce((s, t) => s + t.kg, 0)
           + colocacoes.filter((c) => c.data === diasAntes(1)).reduce((s, c) => s + (c.kg_bandejas || 0), 0),
         bandejaOntem: colocacoes.find((c) => c.data === diasAntes(1)) || null,
@@ -238,14 +258,16 @@ export default function App() {
   const admin = cad?.perfil === 'admin'
   const gestor = admin || cad?.perfil === 'gestor'   // admin faz tudo do gestor
 
+  const noEscritorio = gestor && modo === 'escritorio'
+  // no escritório, salvar fica na mesma página (remontada, com os dados novos); no coletor, volta para `voltar`
+  const irDepois = (voltar) => (noEscritorio ? setChave((k) => k + 1) : setTela(voltar))
   const salvar = async (tipo, dados, extra, voltar = 'inicio') => {
     if (extra) { // [{tipo, dados, id}] lançados juntos, na ordem
       for (const e of extra) await adicionarLancamento(e.tipo, e.dados, operador, e.id)
     } else await adicionarLancamento(tipo, dados, operador)
     await recarregar()
-    setTela(voltar)
+    irDepois(voltar)
     if (tipo === 'ciclo') {
-      await recarregar(); setTela(voltar)
       setAviso({ tipo: 'ok', texto: 'Ciclo iniciado: viveiro em preparação' + (online ? '' : ' — envia quando tiver sinal') })
       if (online) sync()
       return
@@ -257,9 +279,51 @@ export default function App() {
 
   if (logado === false) return <Login />
   if (!cad || operador === undefined) return <div className="carregando">Carregando…</div>
-  if (tela === 'painel' && gestor) return <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online}
-    onVoltar={() => setTela('inicio')} onAlterado={async () => setCad(await carregarCadastro())} />
   if (!operador && MODO_DEMO) return <Entrada onOk={async (n) => { await setOperador(n); setOp(n); setTela('inicio') }} />
+  const recarregaCad = async () => setCad(await carregarCadastro())
+  const tratosPadrao = Number(cad.config.tratos_por_dia) || 4
+  const sairApp = MODO_DEMO ? null : () => {
+    if (pendentes === 0 || window.confirm(`Há ${pendentes} lançamento(s) não enviado(s). Eles ficam neste aparelho e serão enviados no próximo login. Sair mesmo assim?`)) sair()
+  }
+
+  if (noEscritorio) {
+    const v = viveiros.find((x) => x.id === sel)
+    return (
+      <Escritorio pagina={pagina} setPagina={setPagina} online={online} pendentes={pendentes}
+        usuario={`${operador}${admin ? ' · admin' : ' · gestor'}`}
+        onEnvios={() => { setModo('campo'); setTela('envios') }} onColetor={() => { setModo('campo'); setTela('inicio') }} onSair={sairApp}>
+        <div key={chave} className="esc-pagina">
+          {pagina === 'painel' && <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online} />}
+          {pagina === 'ciclos' && <PaginaCiclos viveiros={viveiros} sel={sel} onSel={setSel}>
+            {v ? <FormCiclo key={sel} vidInicial={sel} viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
+              online={online} onAlterado={recarregaCad} />
+              : <p className="p-vazio">Escolha um viveiro na tabela.</p>}
+          </PaginaCiclos>}
+          {pagina === 'plano' && (v
+            ? <div className="painel"><div className="e-acoes"><button onClick={() => setSel(null)}>‹ Voltar à tabela</button></div>
+                <section className="p-bloco e-form e-estreito"><h2>Plano detalhado (divisão por trato, recado)</h2>
+                  <FormPlano vidInicial={sel} viveiros={viveiros} racoes={racoes} tratosPadrao={tratosPadrao} onSalvar={salvar} /></section></div>
+            : <PlanoTabela viveiros={viveiros} racoes={racoes} tratosPadrao={tratosPadrao} onSalvar={salvar} onDetalhar={setSel} />)}
+          {pagina === 'despescas' && <div className="painel"><section className="p-bloco e-form e-estreito">
+            <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} tabela={cad.config.preco_venda} /></section></div>}
+          {pagina === 'estoque' && <PaginaEstoque produtos={produtos} viveiros={viveiros} online={online}>
+            <TelaEstoque produtos={produtos} viveiros={viveiros} gestor semSaldo onSalvar={salvar} /></PaginaEstoque>}
+          {pagina === 'financeiro' && <PaginaFinanceiro cad={cad} viveiros={viveiros} produtos={produtos} online={online} onAlterado={recarregaCad} />}
+          {pagina === 'lancamentos' && <SoOnline online={online}><div className="painel"><section className="p-bloco e-form e-estreito">
+            <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin} onAlterado={recarregaCad} /></section></div></SoOnline>}
+          {pagina === 'cadastros' && <SoOnline online={online}><div className="painel"><section className="p-bloco e-form e-estreito">
+            <Cadastros online={online} onAlterado={recarregaCad} /></section></div></SoOnline>}
+          {pagina === 'configuracoes' && <PaginaConfig cad={cad} online={online} onAlterado={recarregaCad}>
+            <div className="p-grade">
+              {admin && !MODO_DEMO && <section className="p-bloco e-form"><h2>Equipe</h2><TelaEquipe online={online} /></section>}
+              {!MODO_DEMO && <section className="p-bloco e-form"><h2>Minha senha</h2><TrocarSenha online={online} onFim={() => {}} /></section>}
+            </div>
+          </PaginaConfig>}
+        </div>
+        {aviso && <div className={`aviso ${aviso.tipo}`} role="status">{aviso.texto}</div>}
+      </Escritorio>
+    )
+  }
 
   return (
     <div className="app">
@@ -278,19 +342,12 @@ export default function App() {
       </header>
 
       <main>
-        {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor} admin={admin} />}
+        {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor}
+          onEscritorio={(p) => { setModo('escritorio'); setPagina(p || 'painel') }} />}
         {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
         {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
-        {tela === 'ciclo' && gestor && <FormCiclo viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
-          online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
-        {tela === 'equipe' && admin && <TelaEquipe online={online} />}
-        {tela === 'cadastros' && gestor && <Cadastros online={online} onAlterado={async () => setCad(await carregarCadastro())} />}
-        {tela === 'registros' && gestor && <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin}
-          onAlterado={async () => setCad(await carregarCadastro())} />}
-        {tela === 'despesca' && gestor && <TelaDespesca viveiros={viveiros} clientes={clientes} previsoes={previsoes} onSalvar={salvar} tabela={cad.config.preco_venda} />}
-        {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={gestor} onSalvar={salvar} />}
-        {tela === 'plano' && gestor && <FormPlano viveiros={viveiros} racoes={racoes} tratosPadrao={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} />}
+        {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={false} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
         {tela === 'agua' && <FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} />}
         {tela === 'ocorrencia' && <FormOcorrencia viveiros={viveiros} onSalvar={salvar} />}
@@ -344,7 +401,7 @@ function Entrada({ onOk }) {
   )
 }
 
-function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
+function Inicio({ viveiros, irPara, tratos, pendentes, gestor, onEscritorio }) {
   return (
     <>
       <div className="acoes">
@@ -353,17 +410,8 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
         <button className="acao agua" onClick={() => irPara('agua')}><span>💧</span>Água</button>
         <button className="acao ocor" onClick={() => irPara('ocorrencia')}><span>⚠️</span>Ocorrência</button>
         <button className="acao insumo" onClick={() => irPara('insumo')}><span>🧪</span>Insumos</button>
-        {gestor && <button className="acao plano" onClick={() => irPara('plano')}><span>📋</span>Plano de ração</button>}
-        {gestor && <button className="acao povoa" onClick={() => irPara('ciclo')}><span>🔄</span>Ciclos</button>}
-        {gestor && <button className="acao despesca" onClick={() => irPara('despesca')}><span>🧺</span>Despesca</button>}
         <button className="acao estoque" onClick={() => irPara('estoque')}><span>📦</span>Estoque</button>
-        {admin && !MODO_DEMO && <button className="acao equipe" onClick={() => irPara('equipe')}><span>👥</span>Equipe</button>}
-        {gestor && !MODO_DEMO && <button className="acao registros" onClick={() => irPara('registros')}><span>📝</span>Histórico</button>}
-        {gestor && !MODO_DEMO && <button className="acao cadastros" onClick={() => irPara('cadastros')}><span>🤝</span>Cadastros</button>}
-        {gestor && MODO_DEMO && <button className="acao equipe" disabled title="Só no sistema real"><span>👥</span>Equipe</button>}
-        {gestor && MODO_DEMO && <button className="acao registros" disabled title="Só no sistema real"><span>📝</span>Histórico</button>}
-        {gestor && MODO_DEMO && <button className="acao cadastros" disabled title="Só no sistema real"><span>🤝</span>Cadastros</button>}
-        {gestor && <button className={`acao painel-btn ${admin || MODO_DEMO ? 'largo' : ''}`} onClick={() => irPara('painel')}><span>📊</span>Painel</button>}
+        {gestor && <button className="acao painel-btn largo" onClick={() => onEscritorio()}><span>🖥️</span>Escritório</button>}
       </div>
       {pendentes > 0 && <button className="faixa" onClick={() => irPara('envios')}>{pendentes} lançamento(s) aguardando envio</button>}
       <h2 className="secao">Viveiros hoje · {dataBR(hoje())}</h2>
@@ -375,7 +423,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
             {v.ciclo && !v.emCultivo ? (<>
               <div className="linha"><span>Em preparação</span><b>{v.diasCiclo} {v.diasCiclo === 1 ? 'dia' : 'dias'}</b></div>
               <div className="linha"><span>Início</span><b>{dataBR(v.ciclo.data_inicio)}</b></div>
-              {gestor ? <button type="button" className="mais" onClick={() => irPara('ciclo')}>Povoar</button>
+              {gestor ? <button type="button" className="mais" onClick={() => onEscritorio('ciclos')}>Povoar (escritório)</button>
                 : <div className="linha"><span>Aguardando povoamento</span></div>}
             </>) : v.ciclo ? (
               <>
@@ -406,7 +454,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, admin }) {
                 {v.dias > 90 && <div className="tag">Passou de 90 dias</div>}
               </>
             ) : gestor
-              ? <button type="button" className="mais" onClick={() => irPara('ciclo')}>Vazio · iniciar ciclo</button>
+              ? <button type="button" className="mais" onClick={() => onEscritorio('ciclos')}>Vazio · iniciar ciclo</button>
               : <div className="linha"><span>Vazio</span></div>}
           </div>
         ))}
@@ -858,8 +906,8 @@ function FormInsumo({ viveiros, insumos, onSalvar }) {
 }
 
 // ---------- Plano de ração (gestor) ----------
-function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar }) {
-  const [vid, setVid] = useState(null)
+function FormPlano({ viveiros, racoes, tratosPadrao, onSalvar, vidInicial = null }) {
+  const [vid, setVid] = useState(vidInicial)
   const [inicio, setInicio] = useState(hoje())
   const [produto, setProduto] = useState(null)
   const [kgDia, setKgDia] = useState('')
@@ -1023,10 +1071,11 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
 }
 
 // ---------- Estoque: saldo (todos) · entrada, contagem e produto (gestor) ----------
-function TelaEstoque({ produtos, viveiros, gestor, onSalvar }) {
-  const [aba, setAba] = useState('saldo')
-  const salvar = async (tipo, dados) => { await onSalvar(tipo, dados, null, 'estoque'); setAba('saldo') }
-  const abas = [['saldo', 'Saldo'], ...(gestor ? [['entrada', 'Entrada'], ['ajuste', 'Contagem'], ['produto', 'Produto']] : [])]
+// semSaldo: no escritório o saldo já aparece na tabela ao lado; aqui ficam só os lançamentos do gestor
+function TelaEstoque({ produtos, viveiros, gestor, onSalvar, semSaldo = false }) {
+  const [aba, setAba] = useState(semSaldo ? 'entrada' : 'saldo')
+  const salvar = async (tipo, dados) => { await onSalvar(tipo, dados, null, 'estoque'); setAba(semSaldo ? 'entrada' : 'saldo') }
+  const abas = [...(semSaldo ? [] : [['saldo', 'Saldo']]), ...(gestor ? [['entrada', 'Entrada'], ['ajuste', 'Contagem'], ['produto', 'Produto']] : [])]
   return (
     <div className="form">
       {abas.length > 1 && <Alternar opcoes={abas} valor={aba} onChange={setAba} />}
@@ -1164,8 +1213,8 @@ function FormProduto({ produtos, onSalvar }) {
 
 // ---------- Ciclos (gestor): iniciar ciclo (preparação) → povoamento (em cultivo) ----------
 // A despesca total encerra o ciclo. O custo comum é rateado por hectare × dia desde o início do ciclo.
-function FormCiclo({ viveiros, pls, fornecedores, onSalvar, online, onAlterado }) {
-  const [vid, setVid] = useState(null)
+function FormCiclo({ viveiros, pls, fornecedores, onSalvar, online, onAlterado, vidInicial = null }) {
+  const [vid, setVid] = useState(vidInicial)
   const [complemento, setComplemento] = useState(false)
   const v = viveiros.find((x) => x.id === vid)
   return (
