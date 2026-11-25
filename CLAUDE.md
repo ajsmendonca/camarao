@@ -14,7 +14,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 **Duas partes no mesmo endereço e login (feito em 25/11/2026, a pedido do Antônio):**
 - **Coletor de campo** (`src/App.jsx`, celular, offline): Ração (trato/bandejas), Biometria, Água, Ocorrência, Insumos,
   Estoque (só saldo) e os cartões dos viveiros. Perfil campo só vê o coletor.
-- **Escritório** (`src/Escritorio.jsx`, gestor/admin; menu lateral, que vira menu horizontal no celular < 900 px):
+- **Escritório** (`src/Escritorio.jsx`, gestor/admin; menu lateral; no celular < 900 px vira botão **☰ Menu** no topo que abre a lista completa com os grupos; tabelas largas rolam para o lado com a 1ª coluna fixa):
   Menu em 3 grupos — **Produção**, **Acompanhamento do campo**, **Gestão** (25/11/2026).
   **Acompanhamento do campo** (`src/Acompanhamento.jsx`; lê do banco, filtro por viveiro e período 7/15/30/90 dias/ciclo; formulário de
   lançamento ao lado): **Ração** (resumo por viveiro: plano, hoje, % do plano, tratos, ontem, média 7 d, bandejas, consumida, FCA;

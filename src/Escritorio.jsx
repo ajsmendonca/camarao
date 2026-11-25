@@ -38,22 +38,25 @@ export const MENU = [
 
 export function Escritorio({ pagina, setPagina, usuario, online, pendentes, onEnvios, onColetor, onSair, children }) {
   const titulo = MENU.find((m) => m[0] === pagina)?.[2] || ''
+  const [aberto, setAberto] = useState(false)   // menu no celular
+  const ir = (id) => { setAberto(false); setPagina(id) }
   return (
-    <div className="esc">
+    <div className={`esc ${aberto ? 'menu-aberto' : ''}`}>
       <nav className="esc-menu" aria-label="Menu do escritório">
         <div className="esc-marca">🦐 <b>Barra Maricultura</b><small>Escritório</small></div>
         {MENU.map(([id, ic, nome, grupo]) => [
           grupo && <span key={'g' + id} className="esc-grupo">{grupo}</span>,
           <button key={id} className={pagina === id ? 'sel' : ''} aria-current={pagina === id ? 'page' : undefined}
-            onClick={() => setPagina(id)}><span>{ic}</span>{nome}</button>,
+            onClick={() => ir(id)}><span>{ic}</span>{nome}</button>,
         ])}
         <div className="esc-rodape">
-          <button onClick={onColetor}><span>📱</span>Coletor de campo</button>
+          <button onClick={() => { setAberto(false); onColetor() }}><span>📱</span>Coletor de campo</button>
           {onSair && <button onClick={onSair}><span>🚪</span>Sair</button>}
         </div>
       </nav>
       <div className="esc-corpo">
         <header className="esc-topo">
+          <button className="esc-menu-btn" onClick={() => setAberto((x) => !x)} aria-expanded={aberto} aria-label="Abrir menu">{aberto ? '✕' : '☰'}<small>Menu</small></button>
           <div className="titulo"><strong>{titulo}</strong><small>{usuario}{MODO_DEMO && ' · demonstração'} · {dataBR(hoje())}</small></div>
           <button className={`status ${online ? 'on' : 'off'}`} onClick={onEnvios} title="Lançamentos guardados neste aparelho">
             <span className="ponto" />{online ? 'Online' : 'Sem sinal'}
@@ -125,7 +128,7 @@ export function PlanoTabela({ viveiros, racoes, tratosPadrao, onSalvar, onDetalh
     const kg = num(l.kg), sv = num(l.sobrev)
     const svAtual = v.sobrevEst ?? p?.sobrevivencia_est ?? null
     const mudou = !p ? kg > 0
-      : kg !== Number(p.kg_dia) || l.produto !== p.produto_id || Number(l.tratos) !== (p.tratos?.length || tratosPadrao)
+      : kg !== Number(p.kg_dia) || (l.produto || null) !== (p.produto_id || null) || Number(l.tratos) !== (p.tratos?.length || tratosPadrao)
         || (sv ?? null) !== (svAtual != null ? Math.round(svAtual * 100) / 100 : null) || l.inicio !== hoje() || !!l.obs.trim()
     const pop = sv > 0 && v.pl ? Math.max(0, v.pl * sv / 100 - v.popDespescada) : null
     const bio = pop != null && v.ultimaBio ? pop * v.ultimaBio.peso_medio_g / 1000 : null
@@ -367,7 +370,7 @@ function PlanoPadrao({ atual, racoes, online, onSalvo }) {
               <option value="">a do último trato</option>
               {racoes.filter((p) => p.ativo !== false || p.id === produto).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></span></label>
           </div>
-          <table className="e-plano"><thead><tr><th>A partir do dia</th><th>Até o dia</th><th className="n">kg/dia por 100 mil PL</th><th className="n">300 mil PL</th><th className="n">400 mil PL</th><th /></tr></thead>
+          <div className="p-tabela"><table className="e-plano"><thead><tr><th>A partir do dia</th><th>Até o dia</th><th className="n">kg/dia por 100 mil PL</th><th className="n">300 mil PL</th><th className="n">400 mil PL</th><th /></tr></thead>
             <tbody>{faixas.map((f, i) => {
               const k = num(f.kg)
               return (
@@ -379,7 +382,7 @@ function PlanoPadrao({ atual, racoes, online, onSalvo }) {
                   <td className="n">{k > 0 ? `${fmt(k * 4, 1)} kg` : '–'}</td>
                   <td>{faixas.length > 1 && <button type="button" className="e-link" onClick={() => setFaixas((l) => l.filter((_, j) => j !== i))}>remover</button>}</td>
                 </tr>)
-            })}</tbody></table>
+            })}</tbody></table></div>
           <div className="e-acoes">
             <button type="button" onClick={() => setFaixas((l) => [...l, { dia: String(Math.min(novo.dias, (novo.faixas.at(-1)?.dia || 0) + 7)), kg: '' }])}>+ Faixa</button>
             {mudou && <button className="e-primario" disabled={!valido || (!online && !MODO_DEMO)} onClick={async () => {
