@@ -64,6 +64,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
   const totalImposto = impostoDe(totalVenda) || 0
   const resultadoDe = (vv, c) => (vv != null && c != null ? vv - impostoDe(vv) - c : null)
   const totalResultado = totalVenda && totalCusto ? totalVenda - totalImposto - totalCusto : null
+  // resultado por dia do ciclo (desde o início da preparação); no total, a soma dos viveiros
+  const totalPorDia = cultivo.reduce((s, v) => { const r = resultadoDe(valorVenda(v), custoDe(v)); return s + (r != null && v.diasCiclo > 0 ? r / v.diasCiclo : 0) }, 0)
   const recarregarTudo = async () => { await carregar(); onAlterado?.() }
   const primeiraNota = (serie?.notas || []).reduce((m, n) => (!m || (n.competencia || n.data) < m ? (n.competencia || n.data) : m), null)
 
@@ -172,12 +174,12 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           <table>
             <thead><tr>
               <th>Viveiro</th><th>Situação</th><th className="n">Dias</th><th className="n">PL</th><th className="n">PL/m²</th>
-              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th><th className="n">Impostos est.</th><th className="n">Custo até hoje</th><th className="n">Resultado est.</th>
+              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th><th className="n">Impostos est.</th><th className="n">Custo até hoje</th><th className="n">Resultado est.</th><th className="n" title="resultado estimado ÷ dias do ciclo (desde o início da preparação)">Resultado/dia</th>
               <th className="n">Ração consumida</th><th className="n">FCA parcial</th><th className="n">Ração hoje</th><th>Bandejas</th><th className="n">OD</th>
             </tr></thead>
             <tbody>{viveiros.map((v) => {
-              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={17} /></tr>
-              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={10} /><td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td><td colSpan={6} /></tr>
+              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={18} /></tr>
+              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={10} /><td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td><td colSpan={7} /></tr>
               const g = ganho(v), f = fcaParcial(v), a = aguaDe(v), r = retDe(v), pr = precoDe(v), vv = valorVenda(v)
               return (
                 <tr key={v.id} className={v.dias >= 110 ? 'critico' : v.dias > 90 ? 'atencao' : ''}>
@@ -193,6 +195,7 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                   <td className="n">{vv != null ? reais(impostoDe(vv)) : '–'}</td>
                   <td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td>
                   <td className={`n ${resultadoDe(vv, custoDe(v)) < 0 ? 'ruim' : ''}`}>{resultadoDe(vv, custoDe(v)) != null ? reais(resultadoDe(vv, custoDe(v))) : '–'}</td>
+                  <td className={`n ${resultadoDe(vv, custoDe(v)) < 0 ? 'ruim' : ''}`} title={`${v.diasCiclo} dias de ciclo`}>{resultadoDe(vv, custoDe(v)) != null && v.diasCiclo > 0 ? reais2(resultadoDe(vv, custoDe(v)) / v.diasCiclo) : '–'}</td>
                   <td className="n">{fmt(v.racaoConsumida, 0)} kg</td>
                   <td className="n">{f != null ? fmt(f, 2) : '–'}</td>
                   <td className="n">{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''}</td>
@@ -208,6 +211,7 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
               <td className="n"><b>{totalVenda ? reais(totalImposto) : '–'}</b></td>
               <td className="n"><b>{totalCusto ? reais(totalCusto) : '–'}</b></td>
               <td className={`n ${totalResultado < 0 ? 'ruim' : ''}`}><b>{totalResultado != null ? reais(totalResultado) : '–'}</b></td>
+              <td className={`n ${totalPorDia < 0 ? 'ruim' : ''}`}><b>{totalResultado != null ? reais2(totalPorDia) : '–'}</b></td>
               <td className="n"><b>{fmt(cultivo.reduce((s, v) => s + (v.racaoConsumida || 0), 0), 0)} kg</b></td><td colSpan={4} />
             </tr></tfoot>
           </table>
@@ -215,7 +219,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
           Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>tab.</b> = preço de tabela pelo último peso
           ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.
-          Impostos est. = {fmt(impostoPct, 2)}% do valor de venda. Resultado est. = valor de venda − impostos − custo até hoje (detalhes do custo no quadro abaixo).</p>
+          Impostos est. = {fmt(impostoPct, 2)}% do valor de venda. Resultado est. = valor de venda − impostos − custo até hoje (detalhes do custo no quadro abaixo).
+          Resultado/dia = resultado est. ÷ dias do ciclo (desde o início da preparação); no total, a soma dos viveiros.</p>
       </section>
       {serie && <CustosViveiros viveiros={viveiros} custos={custos} primeiraNota={primeiraNota} />}
       {serie && !serie.demo && <NotasApresentame notas={serie.notas} destinos={serie.destinos} entradasNota={serie.entradasNota}
