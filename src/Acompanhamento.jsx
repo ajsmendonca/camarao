@@ -483,7 +483,7 @@ export function PaginaInsumos({ viveiros, produtos, online, children }) {
 // fica gravada pelo banco: quem, quando, o que era e como ficou. Só leitura; gestor e admin veem.
 const NOME_TABELA = { racao: 'Trato', pesagens: 'Pesagem', bandeja_colocacoes: 'Bandejas (colocação)', bandeja_retiradas: 'Bandejas (retirada)',
   biometrias: 'Biometria', agua: 'Água', ocorrencias: 'Ocorrência', aplicacoes_insumos: 'Insumo', planos_racao: 'Plano de ração',
-  povoamentos: 'Povoamento', despescas: 'Despesca', estoque_movimentos: 'Estoque', previsoes_despesca: 'Previsão de despesca', ciclos: 'Ciclo', configuracoes: 'Configuração' }
+  povoamentos: 'Povoamento', estimativas_sobrevivencia: 'Sobrevivência estimada', despescas: 'Despesca', estoque_movimentos: 'Estoque', previsoes_despesca: 'Previsão de despesca', ciclos: 'Ciclo', configuracoes: 'Configuração' }
 const IGNORAR = new Set(['id', 'criado_em', 'criado_por', 'ciclo_id', 'colocacao_id', 'valor_prev'])
 const mostra = (v) => v == null ? '—' : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)
 export function LogAlteracoes({ viveiros, online }) {

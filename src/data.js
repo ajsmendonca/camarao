@@ -20,7 +20,7 @@ export const normalizaLogin = (s) =>
   s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '')
 export const emailDoLogin = (login) => (login.includes('@') ? login.trim().toLowerCase() : `${normalizaLogin(login)}@${DOMINIO_EQUIPE}`)
 
-const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', pesagem: 'pesagens', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
+const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', pesagem: 'pesagens', sobrevivencia: 'estimativas_sobrevivencia', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
 
 export const hoje = () => {
   const d = new Date()

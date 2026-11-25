@@ -517,3 +517,5 @@ section .secao { margin-top: 6px; }
 .pesar-kg label.band { background: var(--camarao-claro); }
 .pesar-kg label span { font-size: 13px; color: var(--cinza); font-weight: 600; }
 .pesar-kg input { width: 100%; min-width: 0; font-size: 28px; font-weight: 700; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--linha); background: #fff; text-align: right; }
+.rotulo-mini { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--cinza); }
+.lista-opcoes .nome-prod em { display: block; font-style: normal; font-size: 12px; color: var(--cinza); font-weight: 500; }

@@ -8,7 +8,7 @@ import Painel from './Painel'
 import Registros from './Registros'
 import Cadastros from './Cadastros'
 import { PaginaRacao, PaginaBiometria, PaginaAgua, PaginaOcorrencias, PaginaInsumos, LogAlteracoes } from './Acompanhamento'
-import { Escritorio, MENU, SoOnline, PaginaCiclos, PlanoTabela, PaginaEstoque, PaginaFinanceiro, PaginaConfig } from './Escritorio'
+import { Escritorio, MENU, SoOnline, PaginaCiclos, PlanoTabela, PaginaEstoque, PaginaFinanceiro, PaginaConfig, AjusteSobrevivencia } from './Escritorio'
 
 const num = (s) => {
   if (s === '' || s == null) return null
@@ -49,7 +49,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { pesar: 'Pesar ração', pesagem: 'Pesagem', cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { pesar: 'Pesar ração', pesagem: 'Pesagem', sobrevivencia: 'Sobrevivência estimada', cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -252,9 +252,12 @@ export default function App() {
         : l.tipo === 'colocacao' ? l.dados.kg_bandejas : l.tipo === 'retirada' ? -l.dados.sobra_kg : 0), 0)
       // sobrevivência estimada: plano lançado neste aparelho e ainda não refletido no servidor > a mais recente do
       // servidor (plano ou estimativa avulsa, ex.: carga do Meu Pescado) > a do plano vigente
-      const planoLocal = novos.filter((l) => l.tipo === 'plano' && l.dados.sobrevivencia_est != null && l.dados.data_inicio <= hoje())
-        .sort((a, b) => (b.dados.data_inicio + b.criado_em).localeCompare(a.dados.data_inicio + a.criado_em))[0]
-      r.sobrevEst = planoLocal?.dados.sobrevivencia_est ?? res.sobrevivencia_est_pct ?? plano?.sobrevivencia_est ?? null
+      // (plano com sobrevivência ou estimativa avulsa — ex.: biomassa informada no escritório —, a mais recente vale)
+      const svLocal = novos.filter((l) => (l.tipo === 'plano' && l.dados.sobrevivencia_est != null && l.dados.data_inicio <= hoje())
+        || (l.tipo === 'sobrevivencia' && l.dados.data <= hoje()))
+        .sort((a, b) => ((b.dados.data_inicio || b.dados.data) + b.criado_em).localeCompare((a.dados.data_inicio || a.dados.data) + a.criado_em))[0]
+      r.sobrevEst = (svLocal ? (svLocal.tipo === 'plano' ? svLocal.dados.sobrevivencia_est : svLocal.dados.pct) : null)
+        ?? res.sobrevivencia_est_pct ?? plano?.sobrevivencia_est ?? null
       r.popPrevista = r.sobrevEst && r.pl ? Math.max(0, Math.round(r.pl * r.sobrevEst / 100) - r.popDespescada) : null
       r.biomassaPrevista = r.popPrevista != null && r.ultimaBio ? r.popPrevista * r.ultimaBio.peso_medio_g / 1000 : null
       r.previsoes = previsoes.filter((p) => p.ciclo_id === ciclo.id)
@@ -325,11 +328,11 @@ export default function App() {
         onEnvios={() => { setModo('campo'); setTela('envios') }} onColetor={() => { setModo('campo'); setTela('inicio') }} onSair={sairApp}>
         <div key={chave} className="esc-pagina">
           {pagina === 'painel' && <Painel cad={cad} viveiros={viveiros} produtos={produtos} previsoes={previsoes} clientes={clientes} online={online} />}
-          {pagina === 'ciclos' && <PaginaCiclos viveiros={viveiros} sel={sel} onSel={setSel}>
+          {pagina === 'ciclos' && <><PaginaCiclos viveiros={viveiros} sel={sel} onSel={setSel}>
             {v ? <FormCiclo key={sel} vidInicial={sel} viveiros={viveiros} pls={pls} fornecedores={cad.fornecedores || []} onSalvar={salvar}
               online={online} onAlterado={recarregaCad} />
               : <p className="p-vazio">Escolha um viveiro na tabela.</p>}
-          </PaginaCiclos>}
+          </PaginaCiclos><div className="painel"><AjusteSobrevivencia viveiros={viveiros} onSalvar={salvar} /></div></>}
           {pagina === 'plano' && (v
             ? <div className="painel"><div className="e-acoes"><button onClick={() => setSel(null)}>‹ Voltar à tabela</button></div>
                 <section className="p-bloco e-form e-estreito"><h2>Plano detalhado (divisão por trato, recado)</h2>
@@ -337,7 +340,8 @@ export default function App() {
             : <PlanoTabela viveiros={viveiros} racoes={racoes} tratosPadrao={tratosPadrao} onSalvar={salvar} onDetalhar={setSel} />)}
           {pagina === 'racao' && <PaginaRacao viveiros={viveiros} produtos={produtos} online={online}>
             <RacaoEscritorio viveiros={viveiros} racoes={racoes} tratos={tratosPadrao} onSalvar={salvar} /></PaginaRacao>}
-          {pagina === 'biometria' && <PaginaBiometria viveiros={viveiros} online={online}><FormBiometria viveiros={viveiros} onSalvar={salvar} /></PaginaBiometria>}
+          {pagina === 'biometria' && <><div className="painel"><AjusteSobrevivencia viveiros={viveiros} onSalvar={salvar} /></div>
+            <PaginaBiometria viveiros={viveiros} online={online}><FormBiometria viveiros={viveiros} onSalvar={salvar} /></PaginaBiometria></>}
           {pagina === 'agua' && <PaginaAgua viveiros={viveiros} online={online}><FormAgua viveiros={viveiros} params={cad.config.parametros_agua} onSalvar={salvar} /></PaginaAgua>}
           {pagina === 'ocorrencias' && <PaginaOcorrencias viveiros={viveiros} online={online}><FormOcorrencia viveiros={viveiros} onSalvar={salvar} /></PaginaOcorrencias>}
           {pagina === 'insumos' && <PaginaInsumos viveiros={viveiros} produtos={produtos} online={online}><FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} /></PaginaInsumos>}
@@ -1173,6 +1177,7 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
     if (l.tipo === 'despesca') return d.tipo === 'perda_total' ? `perda total · ${d.observacao}` : `${d.tipo} · ${fmt(d.biomassa_kg, 0)} kg · ${fmt(d.peso_medio_g, 1)} g`
     if (l.tipo === 'produto') return `${CAT_PRODUTO[d.categoria]} · ${d.unidade}`
     if (l.tipo === 'racao') return `${d.trato}º trato · ${fmt(d.kg)} kg · ${nomeProd(produtos, d.produto_id)}`
+    if (l.tipo === 'sobrevivencia') return `sobrevivência estimada ${fmt(d.pct, 1)}%${d.origem ? ` (${d.origem})` : ''}`
     if (l.tipo === 'pesagem') return `${d.trato}º trato pesado · lanço ${fmt(d.kg_lanco)} kg${d.kg_bandeja ? ` + bandejas ${fmt(d.kg_bandeja, 2)} kg` : ''}`
     if (l.tipo === 'plano') return `${fmt(d.kg_dia)} kg/dia em ${d.tratos.length} tratos · a partir de ${dataBR(d.data_inicio)}`
     if (l.tipo === 'insumo') { const pr = produtos.find((x) => x.id === d.produto_id); return `${pr?.nome || '—'} · ${fmt(d.quantidade)} ${pr?.unidade || ''}` }
@@ -1196,7 +1201,7 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
         {lanc.length === 0 && <li className="vazio">Nenhum lançamento ainda.</li>}
         {lanc.map((l) => (
           <li key={l.id}>
-            <span className={`ic ${l.tipo}`}>{{ cliente: '👤', pesagem: '📋', previsao: '📅', ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
+            <span className={`ic ${l.tipo}`}>{{ cliente: '👤', pesagem: '📋', sobrevivencia: '📈', previsao: '📅', ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
             <div><b>{l.tipo === 'cliente' ? `Novo cliente · ${l.dados.nome}` : l.tipo === 'previsao' ? `${nomeViveiro(l.dados.ciclo_id)} · Previsão de despesca` : l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : l.tipo === 'ciclo' ? `${viveiros.find((v) => v.id === l.dados.viveiro_id)?.codigo || '?'} · Início de ciclo` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
               <small>{l.tipo === 'ciclo' ? resumo(l) : <>{l.dados.data ? `${dataBR(l.dados.data)}${l.dados.hora ? ` ${l.dados.hora}` : ''}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</>}</small></div>
             {l.sincronizado ? <em className="ok">✓</em>
@@ -1410,7 +1415,8 @@ function DadosCiclo({ v, online, onAlterado }) {
     if (!(pl > 0) || !Number.isInteger(pl)) return setMsg({ erro: true, texto: 'Informe as PL em número inteiro.' })
     if (d.data < ciclo.data_inicio) return setMsg({ erro: true, texto: `O povoamento não pode ser antes do início do ciclo (${dataBR(ciclo.data_inicio)}).` })
     const { error } = await supabase.from('povoamentos').update({ data: d.data, hora: d.hora, pl_quantidade: pl, fornecedor: d.fornecedor || null,
-      estagio: d.estagio ? d.estagio.toUpperCase() : null, observacao: d.observacao || null }).eq('id', p.id)
+      estagio: d.estagio ? d.estagio.toUpperCase() : null, observacao: d.observacao || null,
+      preco_milheiro: num(d.preco) > 0 ? num(d.preco) : null, apresentame_id: d.nota || null }).eq('id', p.id)
     if (error) return setMsg({ erro: true, texto: 'Não foi possível salvar: ' + error.message })
     setMsg({ texto: 'Povoamento atualizado.' }); await carregar(); onAlterado()
   }
@@ -1435,8 +1441,50 @@ function EditaCiclo({ ciclo, onSalvar }) {
     </div>
   )
 }
+// Custo da pós-larva no povoamento: preço por milheiro + nota do Apresenta.me (plano Larva do Camarão).
+// Ao escolher a nota, sugere o preço = valor da nota ÷ milheiros. Com preço, o custo do ciclo = PL × preço ÷ 1000 e a nota sai do rateio.
+function CustoPL({ pl, preco, setPreco, nota, setNota, atualId }) {
+  const [notas, setNotas] = useState(null)
+  const [usadas, setUsadas] = useState({})
+  useEffect(() => {
+    if (MODO_DEMO || !supabase || !navigator.onLine) return
+    Promise.all([
+      supabase.from('financeiro_lancamentos').select('apresentame_id, data, valor, pessoa_nome, descricao').eq('plano_id', 16636).order('data', { ascending: false }).limit(50),
+      supabase.from('povoamentos').select('id, apresentame_id, ciclo_id, ciclos(codigo)').not('apresentame_id', 'is', null),
+    ]).then(([n, u]) => {
+      setNotas((n.data || []).map((x) => ({ ...x, valor: Number(x.valor) })))
+      setUsadas(Object.fromEntries((u.data || []).filter((x) => x.id !== atualId).map((x) => [x.apresentame_id, x.ciclos?.codigo || 'outro ciclo'])))
+    })
+  }, [atualId])
+  const pr = num(preco)
+  const escolher = (n) => {
+    if (nota === n.apresentame_id) return setNota(null)
+    setNota(n.apresentame_id)
+    if (pl > 0) setPreco(String(Math.round(n.valor / (pl / 1000) * 100) / 100).replace('.', ','))
+  }
+  return (
+    <fieldset className="campo"><legend>Custo da pós-larva</legend>
+      <CampoNum rotulo="Preço por milheiro" valor={preco} onChange={setPreco} sufixo="R$" />
+      {pr > 0 && pl > 0 && <small className="dica esq">{mil(pl)} PL × {reais(pr)} = <b>{reais(pl / 1000 * pr)}</b></small>}
+      <span className="rotulo-mini">Nota do Apresenta.me (Larva do Camarão)</span>
+      {MODO_DEMO ? <small className="dica esq">Na demonstração não há notas.</small>
+        : notas == null ? <small className="dica esq">{navigator.onLine ? 'Carregando notas…' : 'Sem sinal: a nota pode ser ligada depois, em Viveiros e ciclos.'}</small>
+          : notas.length === 0 ? <small className="dica esq">Nenhuma nota de larva no Apresenta.me (sincronize em Cadastros).</small>
+            : <div className="lista-opcoes">{notas.map((n) => (
+              <button key={n.apresentame_id} type="button" className={nota === n.apresentame_id ? 'sel' : ''} onClick={() => escolher(n)}>
+                <span className="nome-prod">{n.descricao || n.pessoa_nome}<em>{dataBR(n.data)} · {n.pessoa_nome}{usadas[n.apresentame_id] ? ` · já ligada a ${usadas[n.apresentame_id]}` : ''}</em></span>
+                <small className="saldo">{reais(n.valor)}</small>
+              </button>))}</div>}
+      {nota && notas && pl > 0 && pr > 0 && (() => { const n = notas.find((x) => x.apresentame_id === nota); const dif = n ? n.valor - pl / 1000 * pr : 0
+        return Math.abs(dif) > 1 ? <small className="dica esq aviso-sem-plano">Nota de {reais(n.valor)} ≠ custo calculado {reais(pl / 1000 * pr)} (diferença {reais(dif)}).</small> : null })()}
+      <small className="dica esq">Sem preço, o custo usa o preço médio do lote no estoque ou o padrão de Configurações. A nota ligada sai do rateio.</small>
+    </fieldset>
+  )
+}
+
 function EditaPovoamento({ p, n, total, area, onSalvar }) {
-  const ini = { data: p.data, hora: String(p.hora).slice(0, 5), pl: String(p.pl_quantidade), fornecedor: p.fornecedor || '', estagio: p.estagio || '', observacao: p.observacao || '' }
+  const ini = { data: p.data, hora: String(p.hora).slice(0, 5), pl: String(p.pl_quantidade), fornecedor: p.fornecedor || '', estagio: p.estagio || '', observacao: p.observacao || '',
+    preco: p.preco_milheiro != null ? String(Number(p.preco_milheiro)).replace('.', ',') : '', nota: p.apresentame_id ?? null }
   const [d, setD] = useState(ini)
   const mudou = Object.keys(ini).some((k) => d[k] !== ini[k])
   const pl = num(d.pl)
@@ -1455,6 +1503,7 @@ function EditaPovoamento({ p, n, total, area, onSalvar }) {
         <label className="campo"><span>Estágio</span><input value={d.estagio} onChange={(e) => setD({ ...d, estagio: e.target.value })} placeholder="PL12" /></label>
         <label className="campo"><span>Observação</span><input value={d.observacao} onChange={(e) => setD({ ...d, observacao: e.target.value })} /></label>
       </div>
+      <CustoPL pl={pl} preco={d.preco} setPreco={(x) => setD((o) => ({ ...o, preco: x }))} nota={d.nota} setNota={(x) => setD((o) => ({ ...o, nota: x }))} atualId={p.id} />
       {mudou && <button type="button" className="primario" onClick={() => onSalvar(d)}>Salvar povoamento</button>}
     </div>
   )
@@ -1495,6 +1544,8 @@ function FormPovoamento({ v, pls, fornecedores, onSalvar }) {
   const [forn, setForn] = useState(() => (produto ? fornDoLote(produto) : ''))
   const [estagio, setEstagio] = useState('')
   const [obs, setObs] = useState('')
+  const [preco, setPreco] = useState('')
+  const [nota, setNota] = useState(null)
   const q = num(qtd)
   const dens = q > 0 && v.area_ha ? q / (v.area_ha * 10000) : null
   const inicio = v.ciclo.data_inicio
@@ -1524,10 +1575,11 @@ function FormPovoamento({ v, pls, fornecedores, onSalvar }) {
     <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
     <label className="campo"><span>Observação</span>
       <textarea rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Aclimatação, transporte, mortalidade no saco…" /></label>
-    <p className="dica esq">As PL saem do estoque; o custo vem da nota no Apresenta.me ligada à entrada de estoque.</p>
+    <CustoPL pl={q} preco={preco} setPreco={setPreco} nota={nota} setNota={setNota} atualId={null} />
     <Salvar pronto={q > 0 && q <= 5e6 && Number.isInteger(q) && hora && !(inicio && data < inicio)} alertas={alertas}
       onSalvar={() => onSalvar('povoamento', { ciclo_id: v.ciclo.id, data, hora, pl_quantidade: Math.round(q), produto_id: produto,
-        fornecedor: forn.trim() || null, estagio: estagio.trim().toUpperCase() || null, observacao: obs.trim() || null })} />
+        fornecedor: forn.trim() || null, estagio: estagio.trim().toUpperCase() || null, observacao: obs.trim() || null,
+        preco_milheiro: num(preco) > 0 ? num(preco) : null, apresentame_id: nota || null })} />
   </>)
 }
 

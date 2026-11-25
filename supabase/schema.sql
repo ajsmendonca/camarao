@@ -790,3 +790,66 @@ begin
     execute format('create trigger auditoria_%1$s after update or delete on %1$I for each row execute function registra_auditoria()', t);
   end loop;
 end $$;
+
+-- =====================================================================
+-- Custo da pós-larva no povoamento (25/11/2026): o gestor informa o preço por milheiro e liga a nota do Apresenta.me
+-- (plano Larva do Camarão). Com preço, o custo da PL do ciclo = PL × preço ÷ 1000 (não usa o preço médio do estoque nem o
+-- padrão de configuracoes.preco_pl_milheiro). A nota ligada sai do rateio (destino "já contabilizada").
+alter table povoamentos add column if not exists preco_milheiro numeric(10,2) check (preco_milheiro is null or preco_milheiro >= 0);
+alter table povoamentos add column if not exists apresentame_id bigint;
+create index if not exists ix_pov_nota on povoamentos(apresentame_id);
+
+create or replace function povoamento_nota() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.apresentame_id is not null and (tg_op = 'INSERT' or new.apresentame_id is distinct from old.apresentame_id) then
+    insert into financeiro_destino(apresentame_id, destino, observacao, definido_por)
+    values (new.apresentame_id, 'ja_no_estoque',
+            'Pós-larva do povoamento ' || coalesce((select codigo from ciclos where id = new.ciclo_id), ''), new.lancado_por)
+    on conflict (apresentame_id) do update set destino = 'ja_no_estoque', ciclo_id = null, observacao = excluded.observacao;
+  end if;
+  return new;
+end $$;
+drop trigger if exists povoamento_nota on povoamentos;
+create trigger povoamento_nota after insert or update of apresentame_id on povoamentos for each row execute function povoamento_nota();
+
+create or replace view vw_consumo_ciclo with (security_invoker = true) as
+select ciclo_id, produto_id, sum(q) as quantidade from (
+  select ciclo_id, produto_id, kg q from racao
+  union all select ciclo_id, produto_id, kg_bandejas from bandeja_colocacoes
+  union all select ciclo_id, produto_id, quantidade from aplicacoes_insumos
+  union all select ciclo_id, produto_id, quantidade from consumo_anterior
+  union all select ciclo_id, produto_id, pl_quantidade from povoamentos where produto_id is not null and preco_milheiro is null
+) x where produto_id is not null group by ciclo_id, produto_id;
+
+create or replace view vw_custo_ciclo with (security_invoker = true) as
+select c.id as ciclo_id, c.codigo, v.codigo as viveiro, c.status,
+  coalesce(m.racao, 0) as racao, coalesce(m.insumos, 0) as insumos,
+  coalesce(m.pl, 0) + coalesce(pl.com_preco, 0)
+    + coalesce(pl.sem_produto, 0) * (select (valor #>> '{}')::numeric from configuracoes where chave = 'preco_pl_milheiro') / 1000 as pos_larva,
+  coalesce(r.rateio, 0) as comum, coalesce(r.rateio_provisorio, 0) as comum_provisorio,
+  coalesce(d.direto, 0) as direto,
+  coalesce(m.sem_preco, 0) as qtd_sem_preco
+from ciclos c join viveiros v on v.id = c.viveiro_id
+left join (
+  select cc.ciclo_id,
+    sum(case when pm.categoria = 'racao' then cc.quantidade * pm.preco_medio end) as racao,
+    sum(case when pm.categoria not in ('racao','pos_larva') then cc.quantidade * pm.preco_medio end) as insumos,
+    sum(case when pm.categoria = 'pos_larva' then cc.quantidade * pm.preco_medio end) as pl,
+    sum(case when pm.preco_medio is null then cc.quantidade end) as sem_preco
+  from vw_consumo_ciclo cc join vw_preco_medio pm on pm.produto_id = cc.produto_id group by cc.ciclo_id
+) m on m.ciclo_id = c.id
+left join (select ciclo_id,
+             sum(case when preco_milheiro is not null then pl_quantidade * preco_milheiro / 1000 end) com_preco,
+             sum(case when produto_id is null and preco_milheiro is null then pl_quantidade end) sem_produto
+           from povoamentos group by ciclo_id) pl on pl.ciclo_id = c.id
+left join vw_custo_rateio r on r.ciclo_id = c.id
+left join (select d.ciclo_id, sum(f.valor) direto from financeiro_destino d join financeiro_lancamentos f on f.apresentame_id = d.apresentame_id
+           where d.destino = 'ciclo' group by d.ciclo_id) d on d.ciclo_id = c.id;
+
+-- Sobrevivência estimada informada pela biomassa (25/11/2026): o gestor informa a biomassa atual e o app grava a sobrevivência
+-- equivalente aqui (origem "biomassa informada"); vale daí em diante. Pode passar de 100% (o laboratório manda mais larvas).
+alter table estimativas_sobrevivencia drop constraint if exists estimativas_sobrevivencia_pct_check;
+alter table estimativas_sobrevivencia add constraint estimativas_sobrevivencia_pct_check check (pct > 0 and pct <= 130);
+alter table estimativas_sobrevivencia add column if not exists criado_por uuid default auth.uid() references auth.users(id) on delete set null;
+drop trigger if exists auditoria_estimativas_sobrevivencia on estimativas_sobrevivencia;
+create trigger auditoria_estimativas_sobrevivencia after update or delete on estimativas_sobrevivencia for each row execute function registra_auditoria();

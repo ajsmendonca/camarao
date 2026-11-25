@@ -192,6 +192,18 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   tabela, ação alterou|apagou, antes/depois em jsonb; só gestor lê; ninguém grava direto). Escritório: listas de Acompanhamento com
   "Registrado em", pesagens por viveiro e coluna "Pesado" nos tratos; página Lançamentos com o **Log de alterações e exclusões**.
 
+- **Custo da PL no povoamento** (25/11/2026, pedido do Antônio): no povoamento (novo, complemento ou correção em Viveiros e ciclos) o
+  gestor informa **preço por milheiro** e escolhe a **nota do Apresenta.me** (plano Larva do Camarão 16636; ao escolher, sugere preço =
+  valor ÷ milheiros; avisa se a nota ≠ custo calculado). Colunas `povoamentos.preco_milheiro` e `apresentame_id`. Com preço, o custo da PL
+  do ciclo = PL × preço ÷ 1000 (`vw_custo_ciclo`; o povoamento sai de `vw_consumo_ciclo` para não usar o preço médio do lote); sem preço,
+  preço médio do lote ou `configuracoes.preco_pl_milheiro`. Trigger `povoamento_nota` marca a nota como `ja_no_estoque` (sai do rateio).
+  Notas de larva em 25/11/2026: NF 892 (V02) e NF 893 (V07), R$ 4.200 cada — ainda não ligadas aos povoamentos.
+- **Sobrevivência e biomassa estimada** (25/11/2026: "alterar a biomassa atual alterando a sobrevivência; daí pra frente continuar com a %"):
+  quadro no escritório (páginas **Biometria** e **Viveiros e ciclos**; `AjusteSobrevivencia` em Escritorio.jsx). Digita a biomassa →
+  sobrevivência = (biomassa ÷ último peso + já despescado) ÷ PL; ou digita a sobrevivência. Salvar grava em `estimativas_sobrevivencia`
+  (tipo `sobrevivencia` na fila; origem "biomassa informada: X kg com Y g"); vale a mais recente entre plano e estimativa. Limite 130%
+  (constraint alterada; o laboratório às vezes manda mais larvas).
+
 ### Lançamentos (todos com data **e hora**)
 - **Trato a lanço**: viveiro, nº do trato, ração usada (produto), kg. Vem preenchido com o previsto do plano;
   avisa se diferir >10% do previsto ou se a ração for diferente da prevista.

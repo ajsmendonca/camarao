@@ -448,3 +448,71 @@ function Checagem({ atual, online, onSalvo }) {
     </section>
   )
 }
+
+// ---------- Sobrevivência e biomassa estimada: o gestor informa a biomassa atual (ou a sobrevivência) e o outro valor é recalculado.
+// Grava uma estimativa de sobrevivência (tabela estimativas_sobrevivencia) que vale daí em diante: a biomassa estimada
+// passa a acompanhar as próximas biometrias com essa porcentagem.
+export function AjusteSobrevivencia({ viveiros, onSalvar }) {
+  const cultivo = viveiros.filter((v) => v.emCultivo)
+  const [ed, setEd] = useState({})       // id → { sv, bio, por: 'sv'|'bio' }
+  const [salvando, setSalvando] = useState(false)
+  const peso = (v) => (v.ultimaBio ? Number(v.ultimaBio.peso_medio_g) : null)
+  const bioDe = (v, sv) => (sv > 0 && v.pl && peso(v) ? Math.max(0, v.pl * sv / 100 - (v.popDespescada || 0)) * peso(v) / 1000 : null)
+  const svDe = (v, bio) => (bio >= 0 && v.pl && peso(v) ? ((bio * 1000 / peso(v)) + (v.popDespescada || 0)) / v.pl * 100 : null)
+  const linha = (v) => {
+    const e = ed[v.id]
+    if (!e) return { sv: v.sobrevEst, bio: v.biomassaPrevista, mudou: false }
+    const sv = e.por === 'bio' ? svDe(v, num(e.bio)) : num(e.sv)
+    const bio = e.por === 'bio' ? num(e.bio) : bioDe(v, num(e.sv))
+    return { sv, bio, mudou: true, e }
+  }
+  const muda = (v, por, valor) => setEd((o) => ({ ...o, [v.id]: { por, [por]: valor } }))
+  const linhas = cultivo.map((v) => ({ v, ...linha(v) }))
+  const alterados = linhas.filter((l) => l.mudou)
+  const erro = (l) => (l.sv == null || Number.isNaN(l.sv) || !(l.sv > 0) ? 'informe um valor' : l.sv > 130 ? 'sobrevivência acima de 130%' : null)
+  const comErro = alterados.filter(erro)
+  const salvar = async () => {
+    setSalvando(true)
+    try {
+      await onSalvar('sobrevivencia', null, alterados.map((l) => ({ tipo: 'sobrevivencia', dados: {
+        ciclo_id: l.v.ciclo.id, data: hoje(), pct: Math.round(l.sv * 100) / 100,
+        origem: l.e.por === 'bio' ? `biomassa informada: ${fmt(l.bio, 0)} kg com ${fmt(peso(l.v), 2)} g` : 'ajuste no escritório' } })), 'x')
+      setEd({})
+    } finally { setSalvando(false) }
+  }
+  return (
+    <section className="p-bloco">
+      <h2>Sobrevivência e biomassa estimada</h2>
+      <div className="p-tabela"><table className="e-plano">
+        <thead><tr><th>Viveiro</th><th className="n">Dias</th><th className="n">PL povoadas</th><th className="n">Já despescado</th><th className="n">Último peso</th>
+          <th className="n">Sobrevivência %</th><th className="n">Biomassa est. (kg)</th><th className="n">Camarões est.</th><th /></tr></thead>
+        <tbody>{linhas.map((l) => {
+          const { v } = l, e = l.e
+          const pop = l.sv > 0 && v.pl ? Math.max(0, v.pl * l.sv / 100 - (v.popDespescada || 0)) : null
+          return (
+            <tr key={v.id} className={`${l.mudou ? 'alterado' : ''} ${l.mudou && erro(l) ? 'critico' : ''}`}>
+              <td><b>{v.codigo}</b></td><td className="n">{v.dias}</td><td className="n">{v.pl ? mil(v.pl) : '–'}</td>
+              <td className="n">{v.popDespescada ? mil(v.popDespescada) : '–'}</td>
+              <td className="n">{peso(v) ? `${fmt(peso(v), 2)} g` : <small className="fonte">sem biometria</small>}</td>
+              <td className="n"><input className="e-num" inputMode="decimal" aria-label={`Sobrevivência ${v.codigo}`}
+                value={e?.por === 'sv' ? e.sv : txt(l.sv)} onChange={(x) => muda(v, 'sv', x.target.value)} /></td>
+              <td className="n">{peso(v) ? <input className="e-num" inputMode="decimal" aria-label={`Biomassa ${v.codigo}`}
+                value={e?.por === 'bio' ? e.bio : l.bio != null ? String(Math.round(l.bio)) : ''} onChange={(x) => muda(v, 'bio', x.target.value)} /> : '–'}</td>
+              <td className="n">{pop != null ? mil(pop) : '–'}</td>
+              <td>{l.mudou && <button type="button" className="e-link" onClick={() => setEd((o) => { const n = { ...o }; delete n[v.id]; return n })}>desfazer</button>}
+                {l.mudou && l.sv > 100 && !erro(l) && <small className="fonte"> acima de 100%</small>}</td>
+            </tr>)
+        })}</tbody>
+      </table></div>
+      <div className="e-acoes">
+        <button className="e-primario" disabled={!alterados.length || comErro.length > 0 || salvando} onClick={salvar}>
+          {salvando ? 'Salvando…' : alterados.length ? `Salvar ${alterados.length} estimativa(s)` : 'Nenhuma alteração'}</button>
+        {comErro.length > 0 && <span className="p-msg ruim">{comErro.map((l) => `${l.v.codigo}: ${erro(l)}`).join(' · ')}</span>}
+      </div>
+      <p className="p-nota">Digite a <b>biomassa atual</b> (ex.: pela despesca-teste ou tarrafa) e a sobrevivência é recalculada:
+        sobrevivência = (biomassa ÷ último peso + já despescado) ÷ PL povoadas. Ou digite a sobrevivência direto. Ao salvar, essa porcentagem
+        vale daí em diante: a biomassa estimada acompanha as próximas biometrias (PL × sobrevivência × peso). Pode passar de 100%
+        (o laboratório às vezes manda mais larvas); o limite é 130%. O plano de ração também grava a sobrevivência — vale a mais recente.</p>
+    </section>
+  )
+}
