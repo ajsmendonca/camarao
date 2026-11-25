@@ -312,6 +312,7 @@ export function PaginaConfig({ cad, racoes = [], online, onAlterado, children })
       <div className="p-grade">
         <TabelaPreco key={JSON.stringify(tabela)} tabela={tabela} online={online} onSalvo={onAlterado} />
         <Impostos key={impostoPct} pct={impostoPct} online={online} onSalvo={onAlterado} />
+        <Checagem key={JSON.stringify(cad.config?.checagem)} atual={{ pct: 2, trato: 1, ...(cad.config?.checagem || {}) }} online={online} onSalvo={onAlterado} />
         <PrecoPL key={String(cad.config?.preco_pl_milheiro)} valor={Number(cad.config?.preco_pl_milheiro ?? 14)} online={online} onSalvo={onAlterado} />
       </div>
       <PlanoPadrao key={JSON.stringify(cad.config?.plano_padrao)} atual={{ ...PLANO_PADRAO, ...(cad.config?.plano_padrao || {}) }} racoes={racoes} online={online} onSalvo={onAlterado} />
@@ -419,5 +420,31 @@ function GraficoPadrao({ pp }) {
         {[1, Math.round(n / 2), n].map((d) => <text key={d} x={x(d)} y={H - 6} textAnchor="middle">{d}</text>)}
       </svg>
     </figure>
+  )
+}
+
+// Ração das bandejas de checagem: % do kg/dia, tirado do trato em que a checagem é feita (tela "Pesar ração" do coletor)
+function Checagem({ atual, online, onSalvo }) {
+  const [pct, setPct] = useState(txt(atual.pct))
+  const [trato, setTrato] = useState(Number(atual.trato) || 1)
+  const [msg, setMsg] = useState(null)
+  const p = num(pct)
+  const valido = p != null && p >= 0 && p <= 50
+  const mudou = valido && (p !== Number(atual.pct) || trato !== Number(atual.trato))
+  return (
+    <section className="p-bloco p-preco">
+      <h2>Ração da checagem (bandejas)</h2>
+      <div className="p-preco-campos">
+        <label>% da ração do dia<span><input value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" /> %</span></label>
+        <label>tirada do trato<span><select value={trato} onChange={(e) => setTrato(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}º</option>)}</select></span></label>
+        {mudou && <button type="button" disabled={!online && !MODO_DEMO} onClick={async () => {
+          setMsg(null)
+          try { await salvarConfig('checagem', { pct: p, trato }); setMsg('Salvo.'); onSalvo?.() } catch (e) { setMsg('Não foi possível salvar: ' + (e.message || e)) }
+        }}>Salvar</button>}
+        {msg && <small className="p-msg">{msg}</small>}
+      </div>
+      <p className="p-nota">{valido ? `Ex.: plano de 80 kg/dia → ${fmt(80 * p / 100, 2)} kg nas bandejas, pesados à parte no ${trato}º trato (o lanço desse trato fica menor).` : 'Informe um percentual entre 0 e 50.'}
+        {' '}Aparece na tela “Pesar ração” do coletor e preenche a colocação das bandejas. 0% = sem checagem separada.</p>
+    </section>
   )
 }

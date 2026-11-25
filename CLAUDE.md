@@ -177,6 +177,14 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
 - **Ciclos**: ao escolher um viveiro com ciclo, mostra os **dados gravados** para corrigir (início, observação e cada
   povoamento: data, hora, PL, laboratório, estágio, obs.; precisa de sinal); complemento é um botão separado.
 
+- **Pesar ração** (coletor, 25/11/2026; botão laranja no topo da tela inicial): plano do dia de **todos os viveiros** em cultivo,
+  por trato (chips 1º…4º; sugere o 1º trato ainda não lançado), com o total a separar por ração. Cada viveiro mostra **Lanço**
+  e **Bandejas (checagem)** em kg. Checagem = `configuracoes.checagem` {pct: % do kg/dia (padrão 2), trato: em que trato é feita
+  (padrão 1º)} — o lanço desse trato = trato do plano − bandejas (`v.pesagem` em App.jsx). Gestor/admin alteram em Configurações
+  ("Ração da checagem"). Decidido pelo Antônio: **OK marca como pesado** (só no aparelho, localStorage `pesado-<data>`) e
+  libera **"Lançar trato"/"Lançar bandejas"**, que abrem os formulários já preenchidos (viveiro, trato, kg) e voltam para a pesagem.
+  O previsto do trato (FormRacao) e a colocação das bandejas (FormChecagem) também usam esses valores.
+
 ### Lançamentos (todos com data **e hora**)
 - **Trato a lanço**: viveiro, nº do trato, ração usada (produto), kg. Vem preenchido com o previsto do plano;
   avisa se diferir >10% do previsto ou se a ração for diferente da prevista.

@@ -49,7 +49,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { pesar: 'Pesar ração', cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -76,7 +76,9 @@ export default function App() {
     try { localStorage.setItem('modo', m) } catch { /* sem armazenamento */ }
   }, [])
   const setPagina = useCallback((p) => { setPaginaBase(p); setSel(null); setChave((k) => k + 1); history.replaceState(null, '', '#e-' + p); window.scrollTo(0, 0) }, [])
+  const [prefill, setPrefill] = useState(null)   // tela Pesar ração → trato/bandejas já preenchidos
   const setTela = useCallback((t) => {
+    if (t !== 'racao' && t !== 'checagem') setPrefill(null)
     setTelaBase(t)
     if (location.hash) history.replaceState(null, '', location.pathname + location.search)
   }, [])
@@ -227,6 +229,16 @@ export default function App() {
         racaoRecente: tratosCiclo.slice(0, 28).map((t) => t.kg),
       }
       r.kgHoje = r.kgLancoHoje + r.kgBandejaHoje
+      // pesagem de cada trato: a ração das bandejas de checagem (% do kg/dia) sai do trato em que a checagem é feita
+      const chk = { pct: 2, trato: 1, ...(cad.config.checagem || {}) }
+      if (plano?.tratos?.length) {
+        const tChk = Math.min(Number(chk.trato) || 1, plano.tratos.length)
+        const band = Number(chk.pct) > 0 ? Math.round(plano.kg_dia * Number(chk.pct) / 100 * 100) / 100 : 0
+        r.pesagem = plano.tratos.map((t) => {
+          const b = t.trato === tChk ? Math.min(Number(t.kg), band) : 0
+          return { trato: t.trato, total: Number(t.kg), bandeja: b, lanco: Math.round((Number(t.kg) - b) * 10) / 10 }
+        })
+      } else r.pesagem = null
       // povoamento, despesca e população prevista
       r.povoamentos = meus.filter((l) => l.tipo === 'povoamento').map((l) => l.dados)
       r.pl = (res.pl_quantidade || 0) + novos.filter((l) => l.tipo === 'povoamento').reduce((s, l) => s + l.dados.pl_quantidade, 0)
@@ -350,7 +362,7 @@ export default function App() {
     <div className="app">
       <header className="topo">
         {tela !== 'inicio'
-          ? <button className="voltar" onClick={() => setTela('inicio')} aria-label="Voltar">‹</button>
+          ? <button className="voltar" onClick={() => setTela(prefill?.volta && (tela === 'racao' || tela === 'checagem') ? prefill.volta : 'inicio')} aria-label="Voltar">‹</button>
           : <span className="marca">🦐</span>}
         <div className="titulo">
           <strong>{tela === 'inicio' ? 'Coleta de campo' : tela === 'envios' ? 'Lançamentos' : TELA_NOME[tela]}</strong>
@@ -365,8 +377,12 @@ export default function App() {
       <main>
         {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor}
           onEscritorio={(p) => { setModo('escritorio'); setPagina(p || 'painel') }} />}
-        {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
-        {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
+        {tela === 'pesar' && <TelaPesar viveiros={viveiros} racoes={racoes} checagem={cad.config.checagem}
+          onLancar={(tipo, ini) => { setPrefill({ ...ini, volta: 'pesar' }); setTela(tipo) }} />}
+        {tela === 'racao' && <FormRacao inicial={prefill} viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4}
+          onSalvar={(t, d, e) => salvar(t, d, e, prefill?.volta || 'inicio')} irCheck={() => setTela('checagem')} />}
+        {tela === 'checagem' && <FormChecagem inicial={prefill} viveiros={viveiros} racoes={racoes}
+          onSalvar={(t, d, e) => salvar(t, d, e, prefill?.volta || 'inicio')} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={false} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
@@ -379,6 +395,78 @@ export default function App() {
       </main>
 
       {aviso && <div className={`aviso ${aviso.tipo}`} role="status">{aviso.texto}</div>}
+    </div>
+  )
+}
+
+// ---------- Pesar ração: plano do dia de todos os viveiros, por trato, com a ração da checagem separada ----------
+// O OK marca como pesado (guardado só neste aparelho, por dia); depois o botão "Lançar" abre o trato/bandejas preenchidos.
+const chavePesado = () => 'pesado-' + hoje()
+const lerPesado = () => { try { return JSON.parse(localStorage.getItem(chavePesado()) || '{}') } catch { return {} } }
+function TelaPesar({ viveiros, racoes, checagem, onLancar }) {
+  const cultivo = viveiros.filter((v) => v.emCultivo)
+  const nMax = Math.max(1, ...cultivo.map((v) => v.pesagem?.length || 0))
+  // trato sugerido: o primeiro que ainda tem viveiro sem trato lançado hoje
+  const sugerido = Array.from({ length: nMax }, (_, i) => i + 1).find((t) => cultivo.some((v) => v.pesagem?.some((p) => p.trato === t) && !v.tratosHoje.includes(t))) || 1
+  const [trato, setTrato] = useState(sugerido)
+  const [pesado, setPesado] = useState(lerPesado)
+  const marca = (vid, t) => setPesado((m) => {
+    const k = `${vid}-${t}`, novo = { ...m }
+    if (novo[k]) delete novo[k]; else novo[k] = agora()
+    try { localStorage.setItem(chavePesado(), JSON.stringify(novo)) } catch { /* sem armazenamento */ }
+    return novo
+  })
+  const nomeR = (id) => racoes.find((p) => p.id === id)?.nome || 'ração do plano não definida'
+  const linhas = cultivo.map((v) => ({ v, p: v.pesagem?.find((x) => x.trato === trato) || null }))
+  // total a separar do estoque neste trato, por ração
+  const porRacao = {}
+  linhas.forEach(({ v, p }) => { if (p) { const k = v.plano.produto_id || ''; porRacao[k] = (porRacao[k] || 0) + p.total } })
+  const pct = Number(checagem?.pct ?? 2)
+  return (
+    <div className="form pesar">
+      <fieldset className="campo"><legend>Trato</legend>
+        <div className="chips">
+          {Array.from({ length: nMax }, (_, i) => i + 1).map((t) => {
+            const feitos = cultivo.filter((v) => v.tratosHoje.includes(t)).length
+            return <button key={t} type="button" className={trato === t ? 'sel' : ''} onClick={() => setTrato(t)}>{t}º{feitos ? <small> {feitos}✓</small> : null}</button>
+          })}
+        </div>
+      </fieldset>
+      {Object.keys(porRacao).length > 0 && (
+        <div className="pesar-total">
+          <b>Separar para o {trato}º trato</b>
+          {Object.entries(porRacao).map(([id, kg]) => <div key={id}><span>{nomeR(id)}</span><strong>{fmt(kg, 1)} kg</strong></div>)}
+        </div>
+      )}
+      {linhas.map(({ v, p }) => {
+        const k = `${v.id}-${trato}`
+        const lancado = v.tratosHoje.includes(trato)
+        const bandFeita = p?.bandeja > 0 && !!v.bandejaHoje
+        return (
+          <div key={v.id} className={`pesar-card ${pesado[k] ? 'pesado' : ''} ${lancado ? 'lancado' : ''}`}>
+            <div className="pesar-topo"><b>{v.codigo}</b><span>{v.plano ? <>{nomeR(v.plano.produto_id)}{v.plano.padrao && <em> · padrão</em>}</> : 'sem plano'}</span></div>
+            {!p ? <p className="dica esq">{v.plano ? `O plano tem ${v.plano.tratos?.length} tratos.` : 'Sem plano de ração: pergunte ao responsável.'}</p> : (<>
+              <div className="pesar-kg">
+                <div><span>Lanço</span><strong>{fmt(p.lanco, 1)}<em>kg</em></strong></div>
+                {p.bandeja > 0 && <div className="band"><span>Bandejas (checagem)</span><strong>{fmt(p.bandeja, 2)}<em>kg</em></strong></div>}
+              </div>
+              {p.bandeja > 0 && <small className="pesar-obs">Pese a checagem separada: {fmt(p.bandeja, 2)} kg dividido entre as bandejas. Total do trato: {fmt(p.total, 1)} kg.</small>}
+              {v.plano.observacao && !v.plano.padrao && <small className="pesar-obs recado">Recado: {v.plano.observacao}</small>}
+              <div className="pesar-acoes">
+                <button type="button" className={`ok ${pesado[k] ? 'feito' : ''}`} onClick={() => marca(v.id, trato)}>
+                  {pesado[k] ? `✓ Pesado ${pesado[k]}` : 'OK, pesado'}</button>
+                {lancado ? <span className="pesar-lancado">✓ Trato lançado</span>
+                  : <button type="button" disabled={!pesado[k]} onClick={() => onLancar('racao', { vid: v.id, trato })}>Lançar trato</button>}
+                {p.bandeja > 0 && (bandFeita ? <span className="pesar-lancado">✓ Bandejas</span>
+                  : <button type="button" disabled={!pesado[k]} onClick={() => onLancar('checagem', { vid: v.id })}>Lançar bandejas</button>)}
+              </div>
+            </>)}
+          </div>
+        )
+      })}
+      {cultivo.length === 0 && <p className="dica">Nenhum viveiro em cultivo.</p>}
+      <p className="dica">Plano do dia definido pelo escritório (kg/dia inclui as bandejas). A checagem ({fmt(pct, pct % 1 ? 1 : 0)}% da ração do dia) sai do {checagem?.trato || 1}º trato.
+        O “OK, pesado” fica marcado só neste aparelho; o trato só conta quando for lançado.</p>
     </div>
   )
 }
@@ -434,6 +522,7 @@ function Inicio({ viveiros, irPara, tratos, pendentes, gestor, onEscritorio }) {
   return (
     <>
       <div className="acoes">
+        <button className="acao pesar largo" onClick={() => irPara('pesar')}><span>📋</span><b>Pesar ração <small>· plano do dia, por trato e checagem</small></b></button>
         <button className="acao racao" onClick={() => irPara('racao')}><span>🍚</span>Ração</button>
         <button className="acao bio" onClick={() => irPara('biometria')}><span>⚖️</span>Biometria</button>
         <button className="acao agua" onClick={() => irPara('agua')}><span>💧</span>Água</button>
@@ -582,8 +671,8 @@ const alertaEstoque = (prod, qtd) => !prod || !(qtd > 0) || qtd <= prod.saldo + 
 const nomeProd = (produtos, id) => produtos.find((p) => p.id === id)?.nome || '—'
 
 // ---------- Ração: trato ----------
-function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck }) {
-  const [vid, setVid] = useState(null)
+function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck, inicial }) {
+  const [vid, setVid] = useState(inicial?.vid ?? null)
   const [data, setData] = useState(hoje())
   const [hora, setHora] = useState(agora())
   const [trato, setTrato] = useState(null)
@@ -592,11 +681,12 @@ function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck }) {
   const v = viveiros.find((x) => x.id === vid)
   const plano = v?.plano
   const tratos = plano?.tratos?.length || tratosCfg
-  const previsto = plano?.tratos?.find((t) => t.trato === trato)?.kg ?? null
+  // previsto do lanço = trato do plano menos a ração das bandejas, quando a checagem é neste trato
+  const previsto = v?.pesagem?.find((t) => t.trato === trato)?.lanco ?? plano?.tratos?.find((t) => t.trato === trato)?.kg ?? null
   useEffect(() => {
     if (!v) return
     const prox = Array.from({ length: tratos }, (_, i) => i + 1).find((t) => !v.tratosHoje.includes(t))
-    setTrato(prox || null)
+    setTrato(inicial?.vid === vid && inicial?.trato ? inicial.trato : prox || null)
     setProduto(plano?.produto_id || v.ultimoProduto || racoes[0]?.id || null)
   }, [vid]) // eslint-disable-line
   // preenche com o previsto do trato escolhido
@@ -649,9 +739,9 @@ const classificar = (sobra, colocado) => {
   if (!colocado) return 'pouca_sobra'
   return sobra / colocado <= 0.2 ? 'pouca_sobra' : 'muita_sobra'
 }
-function FormChecagem({ viveiros, racoes, onSalvar, irTrato }) {
+function FormChecagem({ viveiros, racoes, onSalvar, irTrato, inicial }) {
   const [produto, setProduto] = useState(null)
-  const [vid, setVid] = useState(null)
+  const [vid, setVid] = useState(inicial?.vid ?? null)
   const [data, setData] = useState(hoje())
   const [hora, setHora] = useState(agora())
   const [colocado, setColocado] = useState('')
@@ -663,7 +753,10 @@ function FormChecagem({ viveiros, racoes, onSalvar, irTrato }) {
   const modo = !v ? null : aberta ? 'retirada' : manual ? 'ambas' : 'colocacao'
   useEffect(() => {
     setManual(false); setSobra(''); setHora(agora()); setHoraCol('')
-    if (v?.ultimaColocacao?.kg_bandejas) setColocado(String(v.ultimaColocacao.kg_bandejas).replace('.', ','))
+    // previsto das bandejas pela tela Pesar ração (% do kg/dia); senão, o da última colocação
+    const prev = v?.pesagem?.find((t) => t.bandeja > 0)?.bandeja
+    if (prev) setColocado(String(prev).replace('.', ','))
+    else if (v?.ultimaColocacao?.kg_bandejas) setColocado(String(v.ultimaColocacao.kg_bandejas).replace('.', ','))
     setProduto(v?.plano?.produto_id || v?.ultimoProduto || racoes[0]?.id || null)
   }, [vid]) // eslint-disable-line
 

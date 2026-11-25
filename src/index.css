@@ -479,3 +479,37 @@ section .secao { margin-top: 6px; }
   .e-filtros { flex-direction: column; align-items: stretch; }
   .p-mult { grid-template-columns: 1fr !important; }
 }
+
+/* Pesar ração (coletor) */
+.acao.pesar { background: var(--camarao); border-color: var(--camarao); color: #fff; }
+.acao.pesar small { display: block; font-size: 13px; font-weight: 500; opacity: .9; }
+.pesar .chips button small { font-size: 12px; opacity: .8; }
+.pesar-total { padding: 12px 14px; border-radius: 12px; background: var(--mar); color: #fff; display: flex; flex-direction: column; gap: 4px; }
+.pesar-total div { display: flex; justify-content: space-between; gap: 10px; } .pesar-total strong { font-size: 18px; }
+.pesar-card { padding: 12px 14px; border-radius: 14px; background: var(--branco); border: 2px solid var(--linha); display: flex; flex-direction: column; gap: 8px; }
+.pesar-card.pesado { border-color: var(--ok); }
+.pesar-card.lancado { opacity: .65; }
+.pesar-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pesar-topo b { font-size: 20px; color: var(--mar); } .pesar-topo span { font-size: 14px; color: var(--cinza); text-align: right; }
+.pesar-kg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pesar-kg div { padding: 8px 10px; border-radius: 10px; background: var(--areia); display: flex; flex-direction: column; }
+.pesar-kg div.band { background: var(--camarao-claro); }
+.pesar-kg span { font-size: 13px; color: var(--cinza); font-weight: 600; }
+.pesar-kg strong { font-size: 30px; line-height: 1.1; } .pesar-kg em { font-style: normal; font-size: 15px; margin-left: 4px; color: var(--cinza); }
+.pesar-obs { color: var(--cinza); font-size: 13px; } .pesar-obs.recado { color: var(--tinta); font-weight: 600; }
+.pesar-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pesar-acoes button { min-height: 48px; padding: 10px 14px; border-radius: 10px; border: 2px solid var(--mar); background: #fff; color: var(--mar); font-weight: 700; }
+.pesar-acoes button:disabled { opacity: .4; }
+.pesar-acoes button.ok { flex: 1 1 100%; background: var(--mar); color: #fff; font-size: 17px; }
+.pesar-acoes button.ok.feito { background: var(--ok); border-color: var(--ok); }
+.pesar-lancado { color: var(--ok); font-weight: 700; padding: 0 6px; }
+/* cartões dos viveiros cabem na tela do celular (antes passavam de 390 px) */
+.viveiros, .acoes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.card { min-width: 0; }
+.linha { gap: 6px; } .linha > span { min-width: 0; } .linha b { text-align: right; }
+.linha b small { white-space: nowrap; }
+@media (max-width: 400px) { .card { padding: 10px; } .linha { font-size: 13px; } .card-topo span { font-size: 12px; } }
+.acao.pesar { justify-content: center; gap: 2px; }
+.acao.pesar small { font-size: 13px; line-height: 1.2; white-space: normal; }
+.linha > span { flex-shrink: 0; } .linha b small { white-space: normal; }
+.card .linha b { white-space: normal; min-width: 0; }
