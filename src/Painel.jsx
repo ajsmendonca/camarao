@@ -3,6 +3,7 @@
 // Os custos do Apresenta.me entram numa próxima etapa.
 import { useEffect, useState, useCallback } from 'react'
 import { carregarPainel, hoje, MODO_DEMO, precoTabela, salvarPrecoTabela, PRECO_PADRAO } from './data'
+import { CustosViveiros, NotasApresentame, custoTotal } from './Financeiro'
 
 const fmt = (n, d = 1) => n == null || Number.isNaN(n) ? '–'
   : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -54,6 +55,11 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
   }
   const valorVenda = (v) => { const p = precoDe(v); return p && v.biomassaPrevista != null ? v.biomassaPrevista * p.preco : null }
   const totalVenda = cultivo.reduce((s, v) => s + (valorVenda(v) || 0), 0)
+  const custos = serie?.custos || {}
+  const custoDe = (v) => (v.ciclo && custos[v.ciclo.id] ? custoTotal(custos[v.ciclo.id]) : null)
+  const totalCusto = cultivo.reduce((s, v) => s + (custoDe(v) || 0), 0)
+  const recarregarTudo = async () => { await carregar(); onAlterado?.() }
+  const primeiraNota = (serie?.notas || []).reduce((m, n) => (!m || (n.competencia || n.data) < m ? (n.competencia || n.data) : m), null)
 
   // ---- indicadores do topo
   const biomassaTotal = cultivo.reduce((s, v) => s + (v.biomassaPrevista || 0), 0)
@@ -155,12 +161,12 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           <table>
             <thead><tr>
               <th>Viveiro</th><th>Situação</th><th className="n">Dias</th><th className="n">PL</th><th className="n">PL/m²</th>
-              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th>
+              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th><th className="n">Custo até hoje</th><th className="n">Resultado est.</th>
               <th className="n">Ração consumida</th><th className="n">FCA parcial</th><th className="n">Ração hoje</th><th>Bandejas</th><th className="n">OD</th>
             </tr></thead>
             <tbody>{viveiros.map((v) => {
-              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={14} /></tr>
-              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={14} /></tr>
+              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={16} /></tr>
+              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={9} /><td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td><td colSpan={6} /></tr>
               const g = ganho(v), f = fcaParcial(v), a = aguaDe(v), r = retDe(v), pr = precoDe(v), vv = valorVenda(v)
               return (
                 <tr key={v.id} className={v.dias >= 110 ? 'critico' : v.dias > 90 ? 'atencao' : ''}>
@@ -173,6 +179,8 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                   <td className="n">{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : '–'}</td>
                   <td className="n" title={pr ? `preço da ${pr.fonte}` : ''}>{pr ? <>{fmt(pr.preco, 2)} <small className="fonte">{pr.fonte === 'previsão' ? 'prev.' : 'tab.'}</small></> : '–'}</td>
                   <td className="n"><b>{vv != null ? reais(vv) : '–'}</b></td>
+                  <td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td>
+                  <td className={`n ${vv != null && custoDe(v) != null && vv - custoDe(v) < 0 ? 'ruim' : ''}`}>{vv != null && custoDe(v) != null ? reais(vv - custoDe(v)) : '–'}</td>
                   <td className="n">{fmt(v.racaoConsumida, 0)} kg</td>
                   <td className="n">{f != null ? fmt(f, 2) : '–'}</td>
                   <td className="n">{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''}</td>
@@ -185,14 +193,20 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
               <td><b>Total</b></td><td colSpan={7} />
               <td className="n"><b>{fmt(biomassaTotal, 0)} kg</b></td><td />
               <td className="n"><b>{totalVenda ? reais(totalVenda) : '–'}</b></td>
+              <td className="n"><b>{totalCusto ? reais(totalCusto) : '–'}</b></td>
+              <td className={`n ${totalVenda - totalCusto < 0 ? 'ruim' : ''}`}><b>{totalVenda && totalCusto ? reais(totalVenda - totalCusto) : '–'}</b></td>
               <td className="n"><b>{fmt(cultivo.reduce((s, v) => s + (v.racaoConsumida || 0), 0), 0)} kg</b></td><td colSpan={4} />
             </tr></tfoot>
           </table>
         </div>
         <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
           Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>tab.</b> = preço de tabela pelo último peso
-          ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.</p>
+          ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.
+          Custo até hoje e resultado estimado (valor de venda − custo): detalhes no quadro de custos abaixo.</p>
       </section>
+      {serie && <CustosViveiros viveiros={viveiros} custos={custos} primeiraNota={primeiraNota} />}
+      {serie && !serie.demo && <NotasApresentame notas={serie.notas} destinos={serie.destinos} entradasNota={serie.entradasNota}
+        viveiros={viveiros} produtos={produtos} usuario={cad.nome} onAlterado={recarregarTudo} />}
 
       <section className="p-bloco">
         <h2>Crescimento e ração por viveiro</h2>

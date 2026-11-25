@@ -491,6 +491,100 @@ select d.ciclo_id, sum(h.faturamento) as faturamento, sum(h.custo) as custo, sum
 from vendas_historico h join despescas d on d.id = h.despesca_id left join clientes cl on cl.id = h.cliente_id
 group by d.ciclo_id;
 
+-- ============================================================
+-- Custos por ciclo (Apresenta.me + consumo)
+-- 1) materiais: consumo do ciclo × preço médio do produto (Meu Pescado no saldo inicial + notas ligadas a entradas)
+-- 2) despesas comuns do Apresenta.me rateadas por hectare entre os ciclos abertos na data da nota (sem Investimento 1829)
+-- 3) notas de Ração/Larva/Insumos ainda não classificadas contam no rateio como "provisórias"
+-- ============================================================
+alter table produtos add column if not exists custo_inicial numeric(12,4);          -- preço médio do Meu Pescado (R$/unidade)
+alter table estoque_movimentos add column if not exists apresentame_id bigint;     -- nota do Apresenta.me desta entrada
+alter table estoque_movimentos add column if not exists valor numeric(14,2);       -- R$ desta entrada (parte da nota)
+insert into configuracoes(chave, valor) values ('preco_pl_milheiro', '14') on conflict (chave) do nothing;
+
+-- destino que o gestor deu a cada nota (a nota em si vem do Apresenta.me e é regravada a cada sincronização)
+create table if not exists financeiro_destino (
+  apresentame_id bigint primary key,
+  destino     text not null check (destino in ('estoque','ja_no_estoque','ciclo','rateio','ignorar')),
+  ciclo_id    uuid references ciclos(id),
+  observacao  text,
+  definido_por text,
+  criado_em   timestamptz not null default now(),
+  check (destino <> 'ciclo' or ciclo_id is not null)
+);
+
+-- preço médio ponderado de cada produto
+create or replace view vw_preco_medio with (security_invoker = true) as
+select p.id as produto_id, p.nome, p.categoria, p.unidade, p.custo_inicial,
+  coalesce(si.q, 0) as qtd_inicial, coalesce(e.q, 0) as qtd_notas, coalesce(e.v, 0) as valor_notas,
+  case when coalesce(e.q, 0) + case when p.custo_inicial is not null then coalesce(si.q, 0) else 0 end > 0
+       then (coalesce(si.q, 0) * coalesce(p.custo_inicial, 0) + coalesce(e.v, 0))
+            / (coalesce(e.q, 0) + case when p.custo_inicial is not null then coalesce(si.q, 0) else 0 end)
+       else p.custo_inicial end as preco_medio
+from produtos p
+left join (select produto_id, sum(quantidade) q from estoque_movimentos where tipo = 'ajuste' and documento = 'Saldo inicial' group by produto_id) si on si.produto_id = p.id
+left join (select produto_id, sum(quantidade) q, sum(valor) v from estoque_movimentos where tipo = 'entrada' and valor is not null group by produto_id) e on e.produto_id = p.id;
+
+-- consumo de cada ciclo por produto (tudo: lançado aqui, histórico importado e consumo anterior)
+create or replace view vw_consumo_ciclo with (security_invoker = true) as
+select ciclo_id, produto_id, sum(q) as quantidade from (
+  select ciclo_id, produto_id, kg q from racao
+  union all select ciclo_id, produto_id, kg_bandejas from bandeja_colocacoes
+  union all select ciclo_id, produto_id, quantidade from aplicacoes_insumos
+  union all select ciclo_id, produto_id, quantidade from consumo_anterior
+  union all select ciclo_id, produto_id, pl_quantidade from povoamentos where produto_id is not null
+) x where produto_id is not null group by ciclo_id, produto_id;
+
+-- notas de despesa elegíveis ao rateio (comuns ou ainda não classificadas)
+create or replace view vw_notas_rateio with (security_invoker = true) as
+select f.apresentame_id, coalesce(f.competencia, f.data) as data_ref, f.valor, f.plano_id, f.plano_nome, f.pessoa_nome, f.descricao,
+  (d.destino is null and f.plano_id in (15368, 16636, 16938)) as provisoria
+from financeiro_lancamentos f
+left join financeiro_destino d on d.apresentame_id = f.apresentame_id
+where f.tipo = 'debit' and coalesce(f.centro_custo_id, 0) <> 1829
+  and coalesce(d.destino, 'rateio') = 'rateio'
+  and not exists (select 1 from estoque_movimentos m where m.apresentame_id = f.apresentame_id);
+
+-- rateio por hectare entre os ciclos abertos na data (inclui perdas de estoque = ajustes negativos de contagem)
+create or replace view vw_custo_rateio with (security_invoker = true) as
+with itens as (
+  select apresentame_id::text as item, data_ref, valor, provisoria from vw_notas_rateio
+  union all
+  select m.id::text, m.data, -m.quantidade * pm.preco_medio, false
+  from estoque_movimentos m join vw_preco_medio pm on pm.produto_id = m.produto_id
+  where m.tipo = 'ajuste' and m.quantidade < 0 and coalesce(m.documento, '') <> 'Saldo inicial' and pm.preco_medio is not null
+), abertos as (
+  select i.item, i.valor, i.provisoria, c.id as ciclo_id, v.area_ha, sum(v.area_ha) over (partition by i.item) as area_total
+  from itens i
+  join ciclos c on c.status <> 'cancelado' and c.data_inicio <= i.data_ref and (c.data_fim is null or c.data_fim >= i.data_ref)
+  join viveiros v on v.id = c.viveiro_id
+)
+select ciclo_id, sum(valor * area_ha / area_total) as rateio,
+       sum(case when provisoria then valor * area_ha / area_total else 0 end) as rateio_provisorio
+from abertos group by ciclo_id;
+
+-- custo total por ciclo
+create or replace view vw_custo_ciclo with (security_invoker = true) as
+select c.id as ciclo_id, c.codigo, v.codigo as viveiro, c.status,
+  coalesce(m.racao, 0) as racao, coalesce(m.insumos, 0) as insumos,
+  coalesce(m.pl, 0) + coalesce(pl.sem_produto, 0) * (select (valor #>> '{}')::numeric from configuracoes where chave = 'preco_pl_milheiro') / 1000 as pos_larva,
+  coalesce(r.rateio, 0) as comum, coalesce(r.rateio_provisorio, 0) as comum_provisorio,
+  coalesce(d.direto, 0) as direto,
+  coalesce(m.sem_preco, 0) as qtd_sem_preco
+from ciclos c join viveiros v on v.id = c.viveiro_id
+left join (
+  select cc.ciclo_id,
+    sum(case when pm.categoria = 'racao' then cc.quantidade * pm.preco_medio end) as racao,
+    sum(case when pm.categoria not in ('racao','pos_larva') then cc.quantidade * pm.preco_medio end) as insumos,
+    sum(case when pm.categoria = 'pos_larva' then cc.quantidade * pm.preco_medio end) as pl,
+    sum(case when pm.preco_medio is null then cc.quantidade end) as sem_preco
+  from vw_consumo_ciclo cc join vw_preco_medio pm on pm.produto_id = cc.produto_id group by cc.ciclo_id
+) m on m.ciclo_id = c.id
+left join (select ciclo_id, sum(pl_quantidade) sem_produto from povoamentos where produto_id is null group by ciclo_id) pl on pl.ciclo_id = c.id
+left join vw_custo_rateio r on r.ciclo_id = c.id
+left join (select d.ciclo_id, sum(f.valor) direto from financeiro_destino d join financeiro_lancamentos f on f.apresentame_id = d.apresentame_id
+           where d.destino = 'ciclo' group by d.ciclo_id) d on d.ciclo_id = c.id;
+
 -- ---------- Segurança: só usuários logados ----------
 alter table viveiros     enable row level security;
 alter table ciclos       enable row level security;
@@ -540,7 +634,7 @@ begin
   -- tabela de preço de venda: o gestor também pode alterar
   drop policy if exists "configuracoes_preco_gestor" on configuracoes;
   create policy "configuracoes_preco_gestor" on configuracoes for update to authenticated
-    using (eh_gestor() and chave = 'preco_venda') with check (eh_gestor() and chave = 'preco_venda');
+    using (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro')) with check (eh_gestor() and chave in ('preco_venda','preco_pl_milheiro'));
   -- tabelas do gestor: só o admin apaga
   foreach t in array array['ciclos','povoamentos','despescas','consumo_anterior','estimativas_sobrevivencia','planos_racao','produtos','estoque_movimentos'] loop
     execute format('drop policy if exists "%1$s_admin_del" on %1$I', t);
@@ -601,6 +695,9 @@ end $$;
 -- Financeiro do Apresenta.me e log da integração: só o gestor lê; só a Edge Function (service_role) grava
 alter table fornecedores enable row level security;
 alter table financeiro_lancamentos enable row level security;
+alter table financeiro_destino enable row level security;
+drop policy if exists "financeiro_destino_gestor" on financeiro_destino;
+create policy "financeiro_destino_gestor" on financeiro_destino for all to authenticated using (eh_gestor()) with check (eh_gestor());
 alter table integracao_execucoes enable row level security;
 drop policy if exists "financeiro_ler" on financeiro_lancamentos;
 create policy "financeiro_ler" on financeiro_lancamentos for select to authenticated using (eh_gestor());

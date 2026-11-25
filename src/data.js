@@ -243,7 +243,7 @@ export async function carregarPainel(cad) {
   if (MODO_DEMO) return painelDemo(cad)
   const desde = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10)
   const ids = (cad.ciclos || []).map((c) => c.id)
-  const [res, bio, rac, ag, ret, enc, fin] = await Promise.all([
+  const [res, bio, rac, ag, ret, enc, fin, cus, notas, dest, ent] = await Promise.all([
     supabase.from('vw_ciclo_resumo').select('*').in('status', ['preparacao', 'em_cultivo']),
     supabase.from('biometrias').select('ciclo_id, data, peso_medio_g').eq('tipo', 'simples').in('ciclo_id', ids).order('data'),
     supabase.from('vw_racao_diaria').select('*').in('ciclo_id', ids).gte('data', desde).order('data'),
@@ -253,8 +253,13 @@ export async function carregarPainel(cad) {
     supabase.from('vw_ciclo_resumo').select('*').eq('status', 'encerrado').order('data_fim', { ascending: false }).limit(300),
     // vendas e custos por ciclo (histórico do Meu Pescado; só o gestor enxerga)
     supabase.from('vw_ciclo_financeiro_historico').select('*'),
+    // custos por ciclo e notas do Apresenta.me (só gestor)
+    supabase.from('vw_custo_ciclo').select('*').in('status', ['preparacao', 'em_cultivo']),
+    supabase.from('financeiro_lancamentos').select('*').eq('tipo', 'debit').order('data', { ascending: false }).limit(500),
+    supabase.from('financeiro_destino').select('*'),
+    supabase.from('estoque_movimentos').select('id, produto_id, quantidade, valor, apresentame_id').not('apresentame_id', 'is', null),
   ])
-  const erro = [res, bio, rac, ag, ret, enc, fin].find((r) => r.error)?.error
+  const erro = [res, bio, rac, ag, ret, enc, fin, cus, notas, dest, ent].find((r) => r.error)?.error
   if (erro) throw erro
   const n = (x) => (x == null ? null : Number(x))
   return {
@@ -264,6 +269,10 @@ export async function carregarPainel(cad) {
     agua: ag.data.map((r) => ({ ...r, od: n(r.od), ph: n(r.ph), temperatura: n(r.temperatura) })),
     retiradas: ret.data,
     encerrados: juntaFinanceiro(enc.data, fin.data),
+    custos: Object.fromEntries((cus.data || []).map((c) => [c.ciclo_id, Object.fromEntries(Object.entries(c).map(([k, v]) => [k, ['ciclo_id', 'codigo', 'viveiro', 'status'].includes(k) ? v : Number(v)]))])),
+    notas: (notas.data || []).map((x) => ({ ...x, valor: Number(x.valor) })),
+    destinos: Object.fromEntries((dest.data || []).map((d) => [d.apresentame_id, d])),
+    entradasNota: ent.data || [],
     demo: false,
   }
 }
@@ -295,7 +304,7 @@ function painelDemo(cad) {
     { ciclo_id: 'e2', faturamento: 43560, custo: 47100, resultado: -3540, clientes: 'Comprador B (exemplo)' },
     { ciclo_id: 'e3', faturamento: 48300, custo: 61000, resultado: -12700, clientes: 'Comprador A (exemplo)' },
   ])
-  return { resumos: {}, biometrias, racao, agua, retiradas, encerrados, demo: true }
+  return { resumos: {}, biometrias, racao, agua, retiradas, encerrados, custos: {}, notas: [], destinos: {}, entradasNota: [], demo: true }
 }
 
 function juntaFinanceiro(enc, fin) {

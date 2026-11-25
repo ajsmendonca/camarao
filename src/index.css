@@ -364,3 +364,23 @@ section .secao { margin-top: 6px; }
 .cad-ativo { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .cad-ativo input { width: 22px; height: 22px; }
 .reg-lista li.inativo { opacity: .6; }
+
+/* v16: custos e notas do Apresenta.me */
+.painel td.prov { color: #7a5a00; }
+.p-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.p-filtros button { padding: 7px 12px; border-radius: 999px; background: var(--areia); color: var(--tinta); font-weight: 600; font-size: 13px; }
+.p-filtros button.sel { background: var(--mar); color: #fff; }
+.p-desc { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.p-sit { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--areia); color: var(--cinza); white-space: nowrap; }
+.p-sit.provisoria { background: #fff6dc; color: #7a5a00; } .p-sit.estoque { background: #e6f0f2; color: var(--mar); }
+.p-sit.ja_no_estoque { background: #eef0f6; color: #2c3a66; } .p-sit.ciclo { background: var(--camarao-claro); color: #8a3a08; }
+.p-sit.ignorar, .p-sit.investimento { background: #f1f1f1; color: #777; }
+.p-acao { padding: 7px 12px; border-radius: 8px; background: var(--camarao); color: #fff; font-weight: 700; font-size: 13px; }
+.p-acao.sec { background: var(--areia); color: var(--mar); }
+.p-acao:disabled { background: #cfc8ba; }
+.p-form-linha td { background: #fcfbf8; white-space: normal; }
+.p-classif { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
+.p-classif select, .p-classif input { padding: 8px 10px; border-radius: 8px; border: 2px solid var(--linha); font-size: 14px; background: #fff; }
+.p-linha-ent { display: flex; flex-wrap: wrap; gap: 6px; }
+.p-linha-ent select { min-width: 240px; } .p-linha-ent input { width: 150px; }
+.p-erro-txt { color: var(--erro) !important; font-weight: 600; } .p-ok-txt { color: var(--ok) !important; font-weight: 600; }

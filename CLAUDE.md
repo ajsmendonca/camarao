@@ -39,7 +39,21 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
      `APRESENTAME_URL` = `https://api.apresenta.me` (descoberto testando endereços do Apresenta.me; formato Bearer).
      1ª sincronização (desde 01/01/2025): 43 despesas, R$ 115.634,45, de 15/10/2026 a 15/12/2026 (vencimentos), 26
      fornecedores criados; nenhuma receita (as vendas ainda não são lançadas no Apresenta.me).
-   - Próximo passo depois de sincronizar: custos por ciclo (ligar notas ao estoque, rateio ha×dia) e receitas → resultado.
+   - **Custos por ciclo (feito em 25/11/2026)** — views `vw_preco_medio` (preço médio ponderado: `produtos.custo_inicial` =
+     preço do Meu Pescado × saldo inicial + entradas com `valor`), `vw_consumo_ciclo` (racao incl. histórico, bandejas,
+     insumos, consumo_anterior, povoamentos com produto), `vw_notas_rateio`, `vw_custo_rateio` (por nota: valor × área do
+     viveiro ÷ área dos ciclos abertos na data `competencia`/`data`; inclui perdas = ajustes negativos × preço médio) e
+     `vw_custo_ciclo` (ração, insumos, pós-larva — PL sem produto × `configuracoes.preco_pl_milheiro` (R$ 14) —, comum,
+     comum_provisorio, direto). Tabela `financeiro_destino` (por nota: estoque | ja_no_estoque | ciclo | rateio | ignorar).
+     Entrada via nota: `estoque_movimentos.apresentame_id` + `valor` (nota com vários produtos: valor dividido pela
+     quantidade ou informado). Centro 1829 (Investimento) fica fora.
+   - **Painel** (`src/Financeiro.jsx`): tabela de viveiros com **Custo até hoje** e **Resultado est.** (valor de venda −
+     custo); quadro "Custo dos ciclos abertos" (ração, insumos, PL, comum, provisório, direto, total, custo/kg est.);
+     quadro **"Notas do Apresenta.me"** (filtro "A classificar" = Ração/Larva/Insumos sem destino; Classificar: entrada no
+     estoque (produto + quantidade), já contabilizada, direto de um ciclo, comum, não é custo; Desfazer — entrada de
+     estoque só o admin desfaz). Em 25/11/2026: 9 notas a classificar (7 de ração/aditivo, 2 de larva = PL do V02/V07,
+     já contadas pelo povoamento). Custo total dos ciclos abertos ≈ R$ 230 mil, sendo ≈ R$ 73 mil provisório.
+   - Falta: receitas (vendas lançadas no Apresenta.me ligadas à despesca) → resultado real dos novos ciclos.
    Decidido em 24/11/2026:
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
      **Fazenda Santo Antonio (id 765)**, separadas por plano de contas (Ração 15368 — inclui probiótico —, Energia 40,
@@ -187,7 +201,8 @@ status das bandejas (a colocar / retirar ~hh:mm / resultado), tratos do dia, ale
 
 ## Banco (supabase/schema.sql)
 viveiros, ciclos (data_inicio, data_povoamento, data_fim, status preparacao|em_cultivo|encerrado|cancelado),
-clientes (+ observacao), fornecedores, financeiro_lancamentos (cópia do Apresenta.me; só gestor lê), integracao_execucoes (log),
+clientes (+ observacao), fornecedores, financeiro_lancamentos (cópia do Apresenta.me; só gestor lê), financeiro_destino, integracao_execucoes (log),
+views de custo vw_preco_medio, vw_consumo_ciclo, vw_notas_rateio, vw_custo_rateio, vw_custo_ciclo; produtos.custo_inicial,
 previsoes_despesca (aberta|realizada|cancelada; valor_prev calculado), povoamentos (+ produto_id do lote de PL; trigger → em cultivo), despescas (parcial|total|perda_total, previsao_id; trigger → encerrado e atualiza previsões), produtos (+ estoque_minimo), estoque_movimentos (entrada|ajuste), view vw_estoque_saldo,
 perfis (admin|gestor|campo; funções eh_gestor, eh_admin), configuracoes, racao (+ fora_estoque), bandeja_colocacoes, bandeja_retiradas,
 biometrias (tipo simples|classes, classes jsonb), agua, ocorrencias, planos_racao, aplicacoes_insumos,
