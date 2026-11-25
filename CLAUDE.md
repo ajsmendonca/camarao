@@ -52,7 +52,10 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
      quadro **"Notas do Apresenta.me"** (filtro "A classificar" = Ração/Larva/Insumos sem destino; Classificar: entrada no
      estoque (produto + quantidade), já contabilizada, direto de um ciclo, comum, não é custo; Desfazer — entrada de
      estoque só o admin desfaz). Em 25/11/2026: 9 notas a classificar (7 de ração/aditivo, 2 de larva = PL do V02/V07,
-     já contadas pelo povoamento). Custo total dos ciclos abertos ≈ R$ 230 mil, sendo ≈ R$ 73 mil provisório.
+     já contadas pelo povoamento). **Classificadas em 25/11/2026 a pedido do Antônio**: 4 notas de ração da Guaraves
+     (R$ 70.152 ≈ consumo desde 14/10 + estoque de 24/11) e 2 de larva (PL do V02/V07) → `ja_no_estoque`; aditivos e
+     probiótico INNUTRI (R$ 1.840, não controlados no estoque) → `rateio`. Custo dos ciclos abertos caiu de ≈ R$ 230 mil
+     para ≈ R$ 158,5 mil, sem provisório. Notas novas de ração (depois de 24/11) → "Entrada no estoque".
    - Falta: receitas (vendas lançadas no Apresenta.me ligadas à despesca) → resultado real dos novos ciclos.
    Decidido em 24/11/2026:
    - Empresa: **Barra Maricultura LTDA (business_id 1754)**; hoje todas as despesas vão no centro de custo
