@@ -20,7 +20,7 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
    sobrevivência estimada, previsão atrasada, estoque abaixo do mínimo, ração <7 dias); tabela dos viveiros (dias, PL,
    PL/m², peso, ganho g/semana, sobrev. est., biomassa est., **R$/kg e valor de venda** (biomassa est. × preço: da previsão
    de despesca do viveiro, senão **preço de tabela** pelo último peso), ração consumida, linha de total, **FCA parcial** = consumida ÷ (biomassa est.
-   + despescada), ração hoje/plano, bandejas, OD); por viveiro: curva de crescimento (peso × dias, linha de referência
+   + despescada), ração hoje/plano, bandejas, OD; impostos est. e resultado est.); por viveiro: curva de crescimento (peso × dias, linha de referência
    em 90 dias) e ração colocada por dia nos últimos 30 dias com o previsto tracejado; previsões de despesca; estoque;
    **histórico de ciclos encerrados**: quadro por faixa de dias de cultivo (até 89, 90–109, ≥110: ciclos, sobrevivência,
    FCA, peso, R$/kg vendido, custo/kg, resultado, ciclos positivos) e tabela ciclo a ciclo com faturamento, custo,
@@ -118,6 +118,12 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   gramas quebradas). Fica em `configuracoes.preco_venda` ({base, peso_ref, passo}); **gestor e admin alteram no painel**
   (quadro "Preço de tabela", com exemplos 8–16 g). Usado no valor de venda do painel (quando o viveiro não tem previsão com
   preço) e para **preencher o preço da previsão de despesca** pelo peso previsto (o gestor pode digitar outro).
+- **Impostos sobre a venda** (decidido em 25/11/2026; estimativa): % do valor de venda estimado, em
+  `configuracoes.imposto_venda` ({pct}; começa em 0 — o Antônio informa). Gestor/admin alteram no painel (quadro "Impostos
+  sobre a venda", ao lado do Preço de tabela; `salvarConfig` em data.js faz UPDATE — a linha já existe). Painel: coluna
+  **Impostos est.** e **Resultado est. = venda − impostos − custo**; indicador **"Resultado estimado"** no topo com a conta.
+  Atenção: COFINS/ICMS pagos no Apresenta.me entram no custo comum (rateio) — se forem impostos da venda, classificar como
+  "Não é custo da produção" para não contar duas vezes.
 - **Ração de hoje/ontem e tratos feitos** somam os tratos deste aparelho + os do servidor (`cad.tratos`, últimos 2 dias,
   de outros aparelhos ou importados), sem repetir id.
 - **Atualização automática** (24/11/2026): `src/main.jsx` registra o service worker (`virtual:pwa-register`, autoUpdate,

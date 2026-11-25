@@ -86,7 +86,7 @@ function cadastroDemo() {
   const previsoes = [{ id: 'demo-pv1', ciclo_id: 'demo-c8', cliente_id: 'demo-cl1', data_prevista: diasAtras(-5), biomassa_prev_kg: 2500,
     peso_medio_prev_g: 13.5, preco_kg_prev: 28, status: 'aberta', observacao: null }]
   return { versao: 6, clientes, previsoes, carregado_em: new Date().toISOString(), viveiros, ciclos, resumos, fornecedores: ['Carapitanga', 'Larva da Barra'], biometrias, produtos, planos, perfil: 'gestor', colocacoes: [], config: { tratos_por_dia: 4,
-    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], preco_venda: { ...PRECO_PADRAO } } }
+    parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], preco_venda: { ...PRECO_PADRAO }, imposto_venda: { pct: 0 } } }
 }
 
 // ---------- Cadastro (viveiros, ciclos ativos, configuração) ----------
@@ -226,13 +226,16 @@ export const precoTabela = (cfg, peso) => {
   const t = { ...PRECO_PADRAO, ...(cfg || {}) }
   return peso > 0 ? Math.max(0, Number(t.base) + (peso - Number(t.peso_ref)) * Number(t.passo)) : null
 }
-export async function salvarPrecoTabela(t) {
+export async function salvarConfig(chave, valor) {
   if (MODO_DEMO) {
-    const cad = await get('cadastro'); cad.config.preco_venda = t; await set('cadastro', cad); return
+    const cad = await get('cadastro'); cad.config[chave] = valor; await set('cadastro', cad); return
   }
-  const { error } = await supabase.from('configuracoes').update({ valor: t }).eq('chave', 'preco_venda')
+  // a linha já existe (criada pelo schema); o gestor só tem permissão de alterar
+  const { data, error } = await supabase.from('configuracoes').update({ valor }).eq('chave', chave).select('chave')
   if (error) throw error
+  if (!data?.length) throw new Error('sem permissão para alterar esta configuração')
 }
+export const salvarPrecoTabela = (t) => salvarConfig('preco_venda', t)
 
 export const getOperador = () => get('operador')
 export const setOperador = (n) => set('operador', n)

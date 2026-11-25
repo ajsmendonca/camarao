@@ -2,7 +2,7 @@
 // ração diária, previsões de despesca, estoque e ciclos encerrados.
 // Os custos do Apresenta.me entram numa próxima etapa.
 import { useEffect, useState, useCallback } from 'react'
-import { carregarPainel, hoje, MODO_DEMO, precoTabela, salvarPrecoTabela, PRECO_PADRAO } from './data'
+import { carregarPainel, hoje, MODO_DEMO, precoTabela, salvarPrecoTabela, salvarConfig, PRECO_PADRAO } from './data'
 import { CustosViveiros, NotasApresentame, custoTotal } from './Financeiro'
 
 const fmt = (n, d = 1) => n == null || Number.isNaN(n) ? '–'
@@ -58,6 +58,12 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
   const custos = serie?.custos || {}
   const custoDe = (v) => (v.ciclo && custos[v.ciclo.id] ? custoTotal(custos[v.ciclo.id]) : null)
   const totalCusto = cultivo.reduce((s, v) => s + (custoDe(v) || 0), 0)
+  // impostos estimados = % sobre o valor de venda estimado (configurável no painel)
+  const impostoPct = Number(cad.config?.imposto_venda?.pct ?? 0)
+  const impostoDe = (vv) => (vv != null ? vv * impostoPct / 100 : null)
+  const totalImposto = impostoDe(totalVenda) || 0
+  const resultadoDe = (vv, c) => (vv != null && c != null ? vv - impostoDe(vv) - c : null)
+  const totalResultado = totalVenda && totalCusto ? totalVenda - totalImposto - totalCusto : null
   const recarregarTudo = async () => { await carregar(); onAlterado?.() }
   const primeiraNota = (serie?.notas || []).reduce((m, n) => (!m || (n.competencia || n.data) < m ? (n.competencia || n.data) : m), null)
 
@@ -122,12 +128,17 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           nota={semEstimativa ? `${semEstimativa} viveiro(s) sem estimativa` : 'pela sobrevivência do plano'} />
         <Kpi titulo="Valor de venda estimado" valor={totalVenda ? reais(totalVenda) : '–'}
           nota={`tabela: ${reais2(tabela.base)} a ${fmt(tabela.peso_ref, 0)} g, ± ${reais2(tabela.passo)}/g`} />
+        <Kpi titulo="Resultado estimado" valor={totalResultado != null ? reais(totalResultado) : '–'}
+          nota={`venda ${reais(totalVenda)} − impostos ${reais(totalImposto)} (${fmt(impostoPct, 2)}%) − custo ${reais(totalCusto)}`} />
         <Kpi titulo="Ração hoje" valor={`${fmt(racaoHoje, 0)} kg`} nota={racaoPrev ? `de ${fmt(racaoPrev, 0)} kg previstos (${fmt((racaoHoje / racaoPrev) * 100, 0)}%)` : 'sem plano'} />
         <Kpi titulo="Despesca em 30 dias" valor={`${fmt(kg30, 0)} kg`} nota={em30.length ? `${em30.length} previsão(ões) · ${reais(r30)}` : 'nenhuma prevista'} />
         <Kpi titulo="Ração em estoque" valor={`${fmt(saldoRacao, 0)} kg`} nota={diasRacao != null ? `~${fmt(diasRacao, 0)} dias pelo plano` : '—'} />
       </section>
 
-      <TabelaPreco tabela={tabela} online={online} onSalvo={onAlterado} />
+      <div className="p-grade">
+        <TabelaPreco tabela={tabela} online={online} onSalvo={onAlterado} />
+        <Impostos pct={impostoPct} online={online} onSalvo={onAlterado} />
+      </div>
 
       <div className="p-grade">
         <section className="p-bloco p-alertas">
@@ -161,12 +172,12 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
           <table>
             <thead><tr>
               <th>Viveiro</th><th>Situação</th><th className="n">Dias</th><th className="n">PL</th><th className="n">PL/m²</th>
-              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th><th className="n">Custo até hoje</th><th className="n">Resultado est.</th>
+              <th className="n">Peso (g)</th><th className="n">Ganho g/sem</th><th className="n">Sobrev. est.</th><th className="n">Biomassa est.</th><th className="n">R$/kg</th><th className="n">Valor de venda</th><th className="n">Impostos est.</th><th className="n">Custo até hoje</th><th className="n">Resultado est.</th>
               <th className="n">Ração consumida</th><th className="n">FCA parcial</th><th className="n">Ração hoje</th><th>Bandejas</th><th className="n">OD</th>
             </tr></thead>
             <tbody>{viveiros.map((v) => {
-              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={16} /></tr>
-              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={9} /><td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td><td colSpan={6} /></tr>
+              if (!v.ciclo) return <tr key={v.id} className="vazio"><td><b>{v.codigo}</b></td><td>Vazio</td><td colSpan={17} /></tr>
+              if (!v.emCultivo) return <tr key={v.id}><td><b>{v.codigo}</b></td><td>Preparação ({v.diasCiclo} d)</td><td colSpan={10} /><td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td><td colSpan={6} /></tr>
               const g = ganho(v), f = fcaParcial(v), a = aguaDe(v), r = retDe(v), pr = precoDe(v), vv = valorVenda(v)
               return (
                 <tr key={v.id} className={v.dias >= 110 ? 'critico' : v.dias > 90 ? 'atencao' : ''}>
@@ -179,8 +190,9 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
                   <td className="n">{v.biomassaPrevista != null ? `${fmt(v.biomassaPrevista, 0)} kg` : '–'}</td>
                   <td className="n" title={pr ? `preço da ${pr.fonte}` : ''}>{pr ? <>{fmt(pr.preco, 2)} <small className="fonte">{pr.fonte === 'previsão' ? 'prev.' : 'tab.'}</small></> : '–'}</td>
                   <td className="n"><b>{vv != null ? reais(vv) : '–'}</b></td>
+                  <td className="n">{vv != null ? reais(impostoDe(vv)) : '–'}</td>
                   <td className="n">{custoDe(v) != null ? reais(custoDe(v)) : '–'}</td>
-                  <td className={`n ${vv != null && custoDe(v) != null && vv - custoDe(v) < 0 ? 'ruim' : ''}`}>{vv != null && custoDe(v) != null ? reais(vv - custoDe(v)) : '–'}</td>
+                  <td className={`n ${resultadoDe(vv, custoDe(v)) < 0 ? 'ruim' : ''}`}>{resultadoDe(vv, custoDe(v)) != null ? reais(resultadoDe(vv, custoDe(v))) : '–'}</td>
                   <td className="n">{fmt(v.racaoConsumida, 0)} kg</td>
                   <td className="n">{f != null ? fmt(f, 2) : '–'}</td>
                   <td className="n">{fmt(v.kgHoje, 0)}{v.plano ? ` / ${fmt(v.plano.kg_dia, 0)}` : ''}</td>
@@ -193,8 +205,9 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
               <td><b>Total</b></td><td colSpan={7} />
               <td className="n"><b>{fmt(biomassaTotal, 0)} kg</b></td><td />
               <td className="n"><b>{totalVenda ? reais(totalVenda) : '–'}</b></td>
+              <td className="n"><b>{totalVenda ? reais(totalImposto) : '–'}</b></td>
               <td className="n"><b>{totalCusto ? reais(totalCusto) : '–'}</b></td>
-              <td className={`n ${totalVenda - totalCusto < 0 ? 'ruim' : ''}`}><b>{totalVenda && totalCusto ? reais(totalVenda - totalCusto) : '–'}</b></td>
+              <td className={`n ${totalResultado < 0 ? 'ruim' : ''}`}><b>{totalResultado != null ? reais(totalResultado) : '–'}</b></td>
               <td className="n"><b>{fmt(cultivo.reduce((s, v) => s + (v.racaoConsumida || 0), 0), 0)} kg</b></td><td colSpan={4} />
             </tr></tfoot>
           </table>
@@ -202,7 +215,7 @@ export default function Painel({ cad, viveiros, produtos, previsoes, clientes, o
         <p className="p-nota">FCA parcial = ração consumida ÷ (biomassa estimada + já despescada). Biomassa estimada = PL × sobrevivência estimada × último peso.
           Valor de venda = biomassa estimada × R$/kg: <b>prev.</b> = preço da previsão de despesca do viveiro; <b>tab.</b> = preço de tabela pelo último peso
           ({reais2(tabela.base)} a {fmt(tabela.peso_ref, 0)} g, ± {reais2(tabela.passo)} por grama). Estimativa para análise de estoque e venda.
-          Custo até hoje e resultado estimado (valor de venda − custo): detalhes no quadro de custos abaixo.</p>
+          Impostos est. = {fmt(impostoPct, 2)}% do valor de venda. Resultado est. = valor de venda − impostos − custo até hoje (detalhes do custo no quadro abaixo).</p>
       </section>
       {serie && <CustosViveiros viveiros={viveiros} custos={custos} primeiraNota={primeiraNota} />}
       {serie && !serie.demo && <NotasApresentame notas={serie.notas} destinos={serie.destinos} entradasNota={serie.entradasNota}
@@ -389,6 +402,30 @@ function TabelaPreco({ tabela, online, onSalvo }) {
         {msg && <small className="p-msg">{msg}</small>}
       </div>
       <p className="p-nota">{ex.map(([g, p]) => `${g} g: ${reais2(p)}`).join(' · ')}</p>
+    </section>
+  )
+}
+
+// Impostos estimados sobre a venda (% do valor de venda estimado). Gestor/admin alteram.
+function Impostos({ pct, online, onSalvo }) {
+  const [d, setD] = useState(String(pct).replace('.', ','))
+  const [msg, setMsg] = useState(null)
+  const novo = Number(String(d).replace(',', '.'))
+  const valido = d !== '' && Number.isFinite(novo) && novo >= 0 && novo < 100
+  const mudou = valido && novo !== Number(pct)
+  return (
+    <section className="p-bloco p-preco">
+      <h2>Impostos sobre a venda (estimativa)</h2>
+      <div className="p-preco-campos">
+        <label>Percentual sobre o valor de venda<span><input value={d} onChange={(e) => setD(e.target.value)} inputMode="decimal" /> %</span></label>
+        {mudou && <button type="button" disabled={!online && !MODO_DEMO} onClick={async () => {
+          setMsg(null)
+          try { await salvarConfig('imposto_venda', { pct: novo }); setMsg('Percentual salvo.'); onSalvo?.() } catch (e) { setMsg('Não foi possível salvar: ' + (e.message || e)) }
+        }}>Salvar</button>}
+        {msg && <small className="p-msg">{msg}</small>}
+      </div>
+      <p className="p-nota">{valido ? `Ex.: venda de R$ 100.000,00 → impostos de ${reais2(1000 * novo)}.` : 'Informe um percentual entre 0 e 99.'}
+        {' '}Entra na tabela de viveiros (Impostos est.) e no Resultado estimado.</p>
     </section>
   )
 }
