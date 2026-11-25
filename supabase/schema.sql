@@ -714,3 +714,79 @@ drop policy if exists "integracao_ler" on integracao_execucoes;
 create policy "integracao_ler" on integracao_execucoes for select to authenticated using (eh_gestor());
 
 -- Os produtos (rações e insumos) são cadastrados pelo gestor no app, em Estoque › Produto.
+
+-- =====================================================================
+-- Pesagem da ração (25/11/2026): o funcionário pesa cada trato antes de jogar (tela "Pesar ração").
+-- A pesagem é só conferência; o trato é lançado na tela Ração, que puxa o peso da pesagem mais recente do trato no dia.
+create table if not exists pesagens (
+  id          uuid primary key,
+  ciclo_id    uuid not null references ciclos(id),
+  data        date not null,
+  hora        time not null,
+  trato       smallint not null check (trato between 1 and 12),
+  produto_id  uuid references produtos(id),
+  kg_lanco    numeric(8,2) not null check (kg_lanco >= 0 and kg_lanco <= 500),
+  kg_bandeja  numeric(8,2) not null default 0 check (kg_bandeja >= 0 and kg_bandeja <= 50),
+  lancado_por text,
+  criado_em   timestamptz not null default now()
+);
+create index if not exists ix_pesagens_ciclo on pesagens(ciclo_id, data, trato);
+alter table pesagens enable row level security;
+drop policy if exists "pesagens_ler" on pesagens;
+create policy "pesagens_ler" on pesagens for select to authenticated using (true);
+drop policy if exists "pesagens_lancar" on pesagens;
+create policy "pesagens_lancar" on pesagens for insert to authenticated with check (true);
+drop policy if exists "pesagens_admin_upd" on pesagens;
+create policy "pesagens_admin_upd" on pesagens for update to authenticated using (eh_admin()) with check (eh_admin());
+drop policy if exists "pesagens_admin_del" on pesagens;
+create policy "pesagens_admin_del" on pesagens for delete to authenticated using (eh_admin());
+
+-- Quem gravou (pelo login, gravado pelo banco — não depende do celular) em todos os lançamentos.
+-- lancado_por = nome mostrado; criado_por = usuário do login; criado_em = quando chegou ao servidor; data/hora = do lançamento.
+do $$
+declare t text;
+begin
+  foreach t in array array['racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias','aplicacoes_insumos',
+    'pesagens','planos_racao','povoamentos','despescas','estoque_movimentos','previsoes_despesca','ciclos'] loop
+    execute format('alter table %I add column if not exists criado_por uuid default auth.uid() references auth.users(id) on delete set null', t);
+  end loop;
+end $$;
+
+-- Log de correções e exclusões (admin em Lançamentos, gestor em ciclos/planos etc.): quem, quando, antes e depois.
+create table if not exists auditoria (
+  id            bigserial primary key,
+  quando        timestamptz not null default now(),
+  usuario       uuid default auth.uid(),
+  usuario_nome  text,
+  tabela        text not null,
+  registro_id   text,
+  acao          text not null check (acao in ('alterou','apagou')),
+  antes         jsonb,
+  depois        jsonb
+);
+create index if not exists ix_auditoria_quando on auditoria(quando desc);
+alter table auditoria enable row level security;
+drop policy if exists "auditoria_gestor_ler" on auditoria;
+create policy "auditoria_gestor_ler" on auditoria for select to authenticated using (eh_gestor());
+
+create or replace function registra_auditoria() returns trigger language plpgsql security definer set search_path = public as $$
+declare a jsonb; d jsonb;
+begin
+  a := to_jsonb(old);
+  d := case when tg_op = 'UPDATE' then to_jsonb(new) else null end;
+  if tg_op = 'UPDATE' and a = d then return new; end if;
+  insert into auditoria(usuario, usuario_nome, tabela, registro_id, acao, antes, depois)
+  values (auth.uid(), (select nome from perfis where user_id = auth.uid()), tg_table_name, a->>'id',
+          case when tg_op = 'UPDATE' then 'alterou' else 'apagou' end, a, d);
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['racao','bandeja_colocacoes','bandeja_retiradas','biometrias','agua','ocorrencias','aplicacoes_insumos',
+    'pesagens','planos_racao','povoamentos','despescas','estoque_movimentos','previsoes_despesca','ciclos','configuracoes'] loop
+    execute format('drop trigger if exists auditoria_%1$s on %1$I', t);
+    execute format('create trigger auditoria_%1$s after update or delete on %1$I for each row execute function registra_auditoria()', t);
+  end loop;
+end $$;

@@ -513,3 +513,7 @@ section .secao { margin-top: 6px; }
 .acao.pesar small { font-size: 13px; line-height: 1.2; white-space: normal; }
 .linha > span { flex-shrink: 0; } .linha b small { white-space: normal; }
 .card .linha b { white-space: normal; min-width: 0; }
+.pesar-kg label { padding: 8px 10px; border-radius: 10px; background: var(--areia); display: flex; flex-direction: column; gap: 4px; }
+.pesar-kg label.band { background: var(--camarao-claro); }
+.pesar-kg label span { font-size: 13px; color: var(--cinza); font-weight: 600; }
+.pesar-kg input { width: 100%; min-width: 0; font-size: 28px; font-weight: 700; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--linha); background: #fff; text-align: right; }

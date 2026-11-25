@@ -20,7 +20,7 @@ export const normalizaLogin = (s) =>
   s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '.').replace(/[^a-z0-9._-]/g, '')
 export const emailDoLogin = (login) => (login.includes('@') ? login.trim().toLowerCase() : `${normalizaLogin(login)}@${DOMINIO_EQUIPE}`)
 
-const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
+const TABELA = { cliente: 'clientes', previsao: 'previsoes_despesca', ciclo: 'ciclos', povoamento: 'povoamentos', despesca: 'despescas', estoque: 'estoque_movimentos', produto: 'produtos', plano: 'planos_racao', insumo: 'aplicacoes_insumos', racao: 'racao', pesagem: 'pesagens', colocacao: 'bandeja_colocacoes', retirada: 'bandeja_retiradas', biometria: 'biometrias', agua: 'agua', ocorrencia: 'ocorrencias' }
 
 export const hoje = () => {
   const d = new Date()
@@ -102,7 +102,7 @@ export async function carregarCadastro() {
       const desde = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10)
       const { data: sess } = await supabase.auth.getSession()
       const uid = sess.session?.user?.id
-      const [v, c, cfg, b, col, prod, pl, pf, bc, fo, cl, pv, rc] = await Promise.all([
+      const [v, c, cfg, b, col, prod, pl, pf, bc, fo, cl, pv, rc, pz] = await Promise.all([
         supabase.from('viveiros').select('*').eq('ativo', true).order('codigo'),
         supabase.from('ciclos').select('*').in('status', ['preparacao', 'em_cultivo']),
         supabase.from('configuracoes').select('*'),
@@ -121,6 +121,8 @@ export async function carregarCadastro() {
         supabase.from('previsoes_despesca').select('*').eq('status', 'aberta').order('data_prevista'),
         // tratos recentes (de qualquer aparelho ou importados) para ração de hoje/ontem e tratos feitos
         supabase.from('racao').select('id, ciclo_id, data, hora, trato, kg').gte('data', desde).order('data', { ascending: false }).limit(500),
+        // pesagens recentes (tela Pesar ração; a tela Ração puxa o peso daqui)
+        supabase.from('pesagens').select('id, ciclo_id, data, hora, trato, produto_id, kg_lanco, kg_bandeja, lancado_por, criado_em').gte('data', desde).limit(500),
       ])
       if (v.error || c.error) throw v.error || c.error
       const config = { tratos_por_dia: 4, parametros_agua: ['od', 'ph', 'temperatura', 'salinidade', 'transparencia'], plano_padrao: PLANO_PADRAO }
@@ -134,6 +136,7 @@ export async function carregarCadastro() {
           sobrevivencia_est_pct: r.sobrevivencia_est_pct == null ? null : Number(r.sobrevivencia_est_pct) }])),
         clientes: cl.data || [],
         tratos: (rc.data || []).map((r) => ({ ...r, kg: Number(r.kg), hora: String(r.hora).slice(0, 5) })),
+        pesagens: (pz.data || []).map((r) => ({ ...r, kg_lanco: Number(r.kg_lanco), kg_bandeja: Number(r.kg_bandeja), hora: String(r.hora).slice(0, 5) })),
         previsoes: (pv.data || []).map((r) => ({ ...r, biomassa_prev_kg: Number(r.biomassa_prev_kg), peso_medio_prev_g: Number(r.peso_medio_prev_g),
           preco_kg_prev: r.preco_kg_prev == null ? null : Number(r.preco_kg_prev) })),
         fornecedores: [...new Set((fo.data || []).map((r) => r.fornecedor).filter(Boolean))],
@@ -192,7 +195,7 @@ export async function sincronizar() {
         if (['produto', 'ciclo', 'cliente'].includes(item.tipo)) delete dados.lancado_por
         // lançamentos do campo só podem ser inseridos (corrigir é do admin): reenvio do mesmo id é ignorado.
         // ciclo, plano, previsão, produto etc. podem ser alterados pelo gestor: reenvio atualiza.
-        const soInsere = ['racao', 'colocacao', 'retirada', 'biometria', 'agua', 'ocorrencia', 'insumo'].includes(item.tipo)
+        const soInsere = ['racao', 'pesagem', 'colocacao', 'retirada', 'biometria', 'agua', 'ocorrencia', 'insumo'].includes(item.tipo)
         const { error } = await supabase.from(TABELA[item.tipo]).upsert(dados, { onConflict: 'id', ignoreDuplicates: soInsere })
         if (error) { erro = error.message; break }
       }

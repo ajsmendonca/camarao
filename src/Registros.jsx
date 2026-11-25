@@ -36,6 +36,9 @@ const TIPOS = {
   insumo: { nome: 'Insumos', tabela: 'aplicacoes_insumos', ordem: 'data',
     campos: [['data', 'Data', 'data'], ['hora', 'Hora', 'hora'], ['produto_id', 'Produto', 'produto:insumo'], ['quantidade', 'Quantidade', 'num'], ['observacao', 'Observação', 'texto']],
     resumo: (r, nomeProd) => `${nomeProd(r.produto_id)} · ${fmt(r.quantidade)}` },
+  pesagem: { nome: 'Pesagens', tabela: 'pesagens', ordem: 'data',
+    campos: [['data', 'Data', 'data'], ['hora', 'Hora', 'hora'], ['trato', 'Trato', 'int'], ['kg_lanco', 'Lanço (kg)', 'num'], ['kg_bandeja', 'Bandejas (kg)', 'num']],
+    resumo: (r) => `${r.trato}º trato · lanço ${fmt(r.kg_lanco)} kg${Number(r.kg_bandeja) ? ` + bandejas ${fmt(r.kg_bandeja, 2)} kg` : ''}` },
   plano: { nome: 'Planos', tabela: 'planos_racao', ordem: 'data_inicio',
     campos: [['data_inicio', 'Vale a partir de', 'data'], ['kg_dia', 'kg por dia', 'num'], ['sobrevivencia_est', 'Sobrevivência estimada (%)', 'num'], ['observacao', 'Recado', 'texto']],
     resumo: (r) => `${fmt(r.kg_dia)} kg/dia em ${(r.tratos || []).length} tratos${r.sobrevivencia_est != null ? ` · sobrev. ${fmt(r.sobrevivencia_est, 0)}%` : ''}` },
@@ -154,7 +157,7 @@ export default function Registros({ viveiros, produtos, online, onAlterado, pode
               <button type="button" className="reg-linha" disabled={!podeEditar} onClick={() => setAberto(aberto === r.id ? null : r.id)}>
                 <b>{dataBR(r[cfg.ordem])}{r.hora ? ` ${hhmm(r.hora)}` : ''}</b>
                 <span>{cfg.resumo(r, nomeProd)}{tipo === 'biometria' && ganhoSemanal(r, linhas.slice(i + 1))}</span>
-                <small>{r.lancado_por || ''}</small>
+                <small>{r.lancado_por || ''}{r.criado_em ? ` · registrado ${new Date(r.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}</small>
               </button>
               {podeEditar && aberto === r.id && <Editor cfg={cfg} tipo={tipo} r={r} produtos={produtos} onSalvar={(v) => salvar(r, v)} onApagar={() => apagar(r)} onFechar={() => setAberto(null)} />}
             </li>))}</ul>

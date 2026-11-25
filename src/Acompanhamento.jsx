@@ -8,6 +8,8 @@ const fmt = (n, d = 1) => n == null || Number.isNaN(Number(n)) ? '–'
   : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
 const dataBR = (iso) => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : ''
 const ddmm = (iso) => dataBR(iso).slice(0, 5)
+// quando o registro chegou ao servidor (log): dd/mm hh:mm no horário do aparelho
+const registrado = (ts) => { if (!ts) return ''; const d = new Date(ts); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${d.toTimeString().slice(0, 5)}` }
 const hhmm = (h) => (h ? String(h).slice(0, 5) : '')
 const diasEntre = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5)
 const diasAntes = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) }
@@ -130,10 +132,11 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
   const f = useFiltros()
   const { dados, erro } = useDados(viveiros, online, f.periodo, [
     ['vw_racao_diaria', 'ciclo_id, data, lanco_kg, bandejas_kg, sobra_kg, colocado_kg, consumido_kg'],
-    ['bandeja_colocacoes', 'id, ciclo_id, data, hora, kg_bandejas, produto_id, lancado_por, bandeja_retiradas(hora, sobra_kg, resultado, lancado_por)'],
-    ['racao', 'id, ciclo_id, data, hora, trato, kg, produto_id, lancado_por, fora_estoque'],
+    ['bandeja_colocacoes', 'id, ciclo_id, data, hora, kg_bandejas, produto_id, lancado_por, criado_em, bandeja_retiradas(hora, sobra_kg, resultado, lancado_por, criado_em)'],
+    ['racao', 'id, ciclo_id, data, hora, trato, kg, produto_id, lancado_por, fora_estoque, criado_em'],
+    ['pesagens', '*'],
   ])
-  const [dias, bandejas, tratos] = dados || [[], [], []]
+  const [dias, bandejas, tratos, pesagens] = dados || [[], [], [], []]
   const nomeProd = (id) => produtos.find((p) => p.id === id)?.nome || '—'
   const vis = viveiros.filter((v) => v.emCultivo && (!f.vid || v.id === f.vid))
   const datas = [...new Set(dias.map((d) => d.data))].sort().reverse()
@@ -147,7 +150,7 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
       <section className="p-bloco">
         <h2>Resumo por viveiro</h2>
         <div className="p-tabela"><table>
-          <thead><tr><th>Viveiro</th><th className="n">Dias</th><th className="n">Plano kg/dia</th><th className="n">Hoje</th><th className="n">% do plano</th><th className="n">Tratos hoje</th>
+          <thead><tr><th>Viveiro</th><th className="n">Dias</th><th className="n">Plano kg/dia</th><th className="n">Hoje</th><th className="n">% do plano</th><th className="n">Tratos hoje</th><th className="n">Pesados hoje</th>
             <th className="n">Ontem</th><th className="n">Média 7 dias</th><th>Bandejas (última)</th><th className="n">No período</th><th className="n">Consumida no ciclo</th><th className="n">FCA parcial</th></tr></thead>
           <tbody>{vis.map((v) => {
             const ck = v.bandejaHoje?.retirada || v.bandejaOntem?.retirada
@@ -159,6 +162,7 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
                 <td className="n"><b>{fmt(v.kgHoje, 1)}</b></td>
                 <td className={`n ${pct != null && pct < 80 && new Date().getHours() >= 17 ? 'ruim' : ''}`}>{pct != null ? `${fmt(pct, 0)}%` : '–'}</td>
                 <td className="n">{v.tratosHoje.length} de {v.plano?.tratos?.length || 4}</td>
+                <td className="n">{Object.keys(v.pesado || {}).length}</td>
                 <td className="n">{fmt(v.racaoOntem, 1)}</td>
                 <td className="n">{dados ? fmt(media(v, 7), 1) : '–'}</td>
                 <td className={ck ? `ck-${ck.resultado}` : ''}>{ck ? `${RESULT[ck.resultado]} (${v.bandejaHoje?.retirada ? 'hoje' : 'ontem'})` : '–'}</td>
@@ -168,7 +172,7 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
               </tr>)
           })}</tbody>
           <tfoot><tr><td><b>Total</b></td><td /><td className="n"><b>{fmt(vis.reduce((s, v) => s + (v.plano?.kg_dia || 0), 0), 0)}</b></td>
-            <td className="n"><b>{fmt(vis.reduce((s, v) => s + v.kgHoje, 0), 0)}</b></td><td colSpan={2} />
+            <td className="n"><b>{fmt(vis.reduce((s, v) => s + v.kgHoje, 0), 0)}</b></td><td colSpan={3} />
             <td className="n"><b>{fmt(vis.reduce((s, v) => s + v.racaoOntem, 0), 0)}</b></td><td colSpan={2} />
             <td className="n"><b>{dados ? `${fmt(vis.reduce((s, v) => s + totPer(v), 0), 0)} kg` : '–'}</b></td>
             <td className="n"><b>{fmt(vis.reduce((s, v) => s + (v.racaoConsumida || 0), 0), 0)} kg</b></td><td /></tr></tfoot>
@@ -212,7 +216,7 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
           <section className="p-bloco">
             <h2>{v.codigo} · bandejas</h2>
             {bd.length === 0 ? <p className="p-vazio">Nenhuma checagem no período.</p> : (
-              <div className="p-tabela"><table><thead><tr><th>Data</th><th>Colocação</th><th className="n">Colocado</th><th>Retirada</th><th className="n">Intervalo</th><th className="n">Sobra</th><th className="n">% sobra</th><th>Resultado</th><th>Lançado por</th></tr></thead>
+              <div className="p-tabela"><table><thead><tr><th>Data</th><th>Colocação</th><th className="n">Colocado</th><th>Retirada</th><th className="n">Intervalo</th><th className="n">Sobra</th><th className="n">% sobra</th><th>Resultado</th><th>Lançado por</th><th>Registrado em</th></tr></thead>
                 <tbody>{bd.map((b) => {
                   const r = b.bandeja_retiradas?.[0]
                   const min = r ? (new Date('2000-01-01T' + hhmm(r.hora)) - new Date('2000-01-01T' + hhmm(b.hora))) / 60000 : null
@@ -221,16 +225,28 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
                       <td>{r ? hhmm(r.hora) : <em>sem retirada</em>}</td><td className="n">{min != null && min >= 0 ? `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}` : '–'}</td>
                       <td className="n">{r ? `${fmt(N(r.sobra_kg), 2)} kg` : '–'}</td>
                       <td className="n">{r && N(b.kg_bandejas) > 0 ? `${fmt(N(r.sobra_kg) / N(b.kg_bandejas) * 100, 0)}%` : '–'}</td>
-                      <td className={r ? `ck-${r.resultado}` : ''}>{r ? RESULT[r.resultado] : '–'}</td><td>{[b.lancado_por, r?.lancado_por].filter(Boolean).join(' / ')}</td></tr>)
+                      <td className={r ? `ck-${r.resultado}` : ''}>{r ? RESULT[r.resultado] : '–'}</td><td>{[b.lancado_por, r?.lancado_por].filter(Boolean).join(' / ')}</td><td>{[registrado(b.criado_em), r && registrado(r.criado_em)].filter(Boolean).join(' / ')}</td></tr>)
                 })}</tbody></table></div>
             )}
           </section>
           <section className="p-bloco">
+            <h2>{v.codigo} · pesagens</h2>
+            {(() => { const pz = pesagens.filter((x) => x.ciclo_id === v.ciclo.id).sort((a, b) => (b.data + b.hora).localeCompare(a.data + a.hora))
+              return pz.length === 0 ? <p className="p-vazio">Nenhuma pesagem no período.</p> : (
+                <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th className="n">Trato</th><th>Ração</th><th className="n">Lanço</th><th className="n">Bandejas</th><th>Pesado por</th><th>Registrado em</th></tr></thead>
+                  <tbody>{pz.map((x) => <tr key={x.id}><td>{dataBR(x.data)}</td><td>{hhmm(x.hora)}</td><td className="n">{x.trato}º</td><td>{nomeProd(x.produto_id)}</td>
+                    <td className="n">{fmt(N(x.kg_lanco), 1)}</td><td className="n">{N(x.kg_bandeja) ? fmt(N(x.kg_bandeja), 2) : '–'}</td><td>{x.lancado_por}</td><td>{registrado(x.criado_em)}</td></tr>)}</tbody></table></div>) })()}
+          </section>
+          <section className="p-bloco">
             <h2>{v.codigo} · tratos a lanço</h2>
             {tr.length === 0 ? <p className="p-vazio">Nenhum trato no período.</p> : (
-              <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th className="n">Trato</th><th>Ração</th><th className="n">kg</th><th>Lançado por</th></tr></thead>
-                <tbody>{tr.map((t) => <tr key={t.id}><td>{dataBR(t.data)}</td><td>{hhmm(t.hora)}</td><td className="n">{t.trato}º</td><td>{nomeProd(t.produto_id)}{t.fora_estoque && <small className="fonte"> histórico</small>}</td>
-                  <td className="n">{fmt(N(t.kg), 1)}</td><td>{t.lancado_por}</td></tr>)}</tbody></table></div>
+              <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th className="n">Trato</th><th>Ração</th><th className="n">kg</th><th className="n">Pesado</th><th>Lançado por</th><th>Registrado em</th></tr></thead>
+                <tbody>{tr.map((t) => {
+                  const pz = pesagens.filter((x) => x.ciclo_id === t.ciclo_id && x.data === t.data && x.trato === t.trato).sort((a, b) => b.criado_em.localeCompare(a.criado_em))[0]
+                  return <tr key={t.id}><td>{dataBR(t.data)}</td><td>{hhmm(t.hora)}</td><td className="n">{t.trato}º</td><td>{nomeProd(t.produto_id)}{t.fora_estoque && <small className="fonte"> histórico</small>}</td>
+                    <td className="n">{fmt(N(t.kg), 1)}</td><td className="n" title={pz ? `pesado às ${hhmm(pz.hora)} por ${pz.lancado_por || '?'}` : ''}>{pz ? fmt(N(pz.kg_lanco), 1) : '–'}</td>
+                    <td>{t.lancado_por}</td><td>{registrado(t.criado_em)}</td></tr>
+                })}</tbody></table></div>
             )}
           </section>
         </>)
@@ -244,7 +260,7 @@ export function PaginaRacao({ viveiros, produtos, online, children }) {
 export function PaginaBiometria({ viveiros, online, children }) {
   const f = useFiltros()
   const { dados, erro } = useDados(viveiros, online, f.periodo === '7' || f.periodo === '15' ? '30' : f.periodo, [
-    ['biometrias', 'id, ciclo_id, data, hora, tipo, classes, n_amostra, peso_total_g, peso_medio_g, lancado_por'],
+    ['biometrias', 'id, ciclo_id, data, hora, tipo, classes, n_amostra, peso_total_g, peso_medio_g, lancado_por, criado_em'],
   ])
   // biometria tem poucos pontos: o período mínimo é 30 dias; para a curva usa-se o ciclo inteiro quando escolhido
   const cic = mapaCiclos(viveiros)
@@ -295,7 +311,7 @@ export function PaginaBiometria({ viveiros, online, children }) {
         <section className="p-bloco">
           <h2>Biometrias do período</h2>
           {lista.length === 0 ? <p className="p-vazio">Nenhuma biometria no período.</p> : (
-            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th className="n">Dias</th><th>Tipo</th><th className="n">Camarões</th><th className="n">Peso total</th><th className="n">Peso médio</th><th className="n">Ganho g/sem</th><th className="n">CV</th><th>Lançado por</th></tr></thead>
+            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th className="n">Dias</th><th>Tipo</th><th className="n">Camarões</th><th className="n">Peso total</th><th className="n">Peso médio</th><th className="n">Ganho g/sem</th><th className="n">CV</th><th>Lançado por</th><th>Registrado em</th></tr></thead>
               <tbody>{lista.map((b) => {
                 const v = cic[b.ciclo_id]
                 const prev = b.tipo !== 'classes' ? [...simples].reverse().find((x) => x.ciclo_id === b.ciclo_id && (x.data + x.hora) < (b.data + b.hora)) : null
@@ -304,7 +320,7 @@ export function PaginaBiometria({ viveiros, online, children }) {
                     <td className="n">{v.ciclo.data_povoamento ? diasEntre(v.ciclo.data_povoamento, b.data) : '–'}</td>
                     <td>{b.tipo === 'classes' ? 'por tamanho' : 'peso total'}</td><td className="n">{b.n_amostra}</td><td className="n">{fmt(N(b.peso_total_g), 0)} g</td>
                     <td className="n"><b>{fmt(N(b.peso_medio_g), 2)} g</b></td><td className="n">{prev ? fmt(ganhoEntre(prev, b), 2) : '–'}</td>
-                    <td className="n">{b.tipo === 'classes' ? `${fmt(cvClasses(b.classes), 0)}%` : ''}</td><td>{b.lancado_por}</td></tr>)
+                    <td className="n">{b.tipo === 'classes' ? `${fmt(cvClasses(b.classes), 0)}%` : ''}</td><td>{b.lancado_por}</td><td>{registrado(b.criado_em)}</td></tr>)
               })}</tbody></table></div>
           )}
         </section>
@@ -366,10 +382,10 @@ export function PaginaAgua({ viveiros, online, children }) {
         <section className="p-bloco">
           <h2>Leituras do período</h2>
           {lista.length === 0 ? <p className="p-vazio">Nenhuma leitura no período.</p> : (
-            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th>{Object.values(PARAM).map((p) => <th key={p.curto} className="n">{p.curto}</th>)}<th>Lançado por</th></tr></thead>
+            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th>{Object.values(PARAM).map((p) => <th key={p.curto} className="n">{p.curto}</th>)}<th>Lançado por</th><th>Registrado em</th></tr></thead>
               <tbody>{lista.map((a) => <tr key={a.id}><td>{dataBR(a.data)}</td><td>{hhmm(a.hora)}</td><td><b>{cic[a.ciclo_id].codigo}</b></td>
                 {Object.entries(PARAM).map(([k, p]) => <td key={k} className={`n ${a[k] != null && p.fora(N(a[k])) ? 'ruim' : ''}`}>{a[k] != null ? fmt(N(a[k]), k === 'od' || k === 'ph' ? 2 : 1) : ''}</td>)}
-                <td>{a.lancado_por}</td></tr>)}</tbody></table></div>
+                <td>{a.lancado_por}</td><td>{registrado(a.criado_em)}</td></tr>)}</tbody></table></div>
           )}
         </section>
       </>)}
@@ -412,9 +428,9 @@ export function PaginaOcorrencias({ viveiros, online, children }) {
             {Object.entries(TIPOS_OC).map(([k, n]) => <button key={k} className={tipo === k ? 'sel' : ''} onClick={() => setTipo(k)}>{n}</button>)}
           </div>
           {lista.length === 0 ? <p className="p-vazio">Nenhuma ocorrência no período.</p> : (
-            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th>Tipo</th><th className="n">Quantidade</th><th>Descrição</th><th>Lançado por</th></tr></thead>
+            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th>Tipo</th><th className="n">Quantidade</th><th>Descrição</th><th>Lançado por</th><th>Registrado em</th></tr></thead>
               <tbody>{lista.map((o) => <tr key={o.id}><td>{dataBR(o.data)}</td><td>{hhmm(o.hora)}</td><td><b>{cic[o.ciclo_id].codigo}</b></td><td>{TIPOS_OC[o.tipo]}</td>
-                <td className="n">{o.quantidade ? o.quantidade.toLocaleString('pt-BR') : ''}</td><td className="e-quebra">{o.descricao}</td><td>{o.lancado_por}</td></tr>)}</tbody></table></div>
+                <td className="n">{o.quantidade ? o.quantidade.toLocaleString('pt-BR') : ''}</td><td className="e-quebra">{o.descricao}</td><td>{o.lancado_por}</td><td>{registrado(o.criado_em)}</td></tr>)}</tbody></table></div>
           )}
         </section>
       </>)}
@@ -452,12 +468,53 @@ export function PaginaInsumos({ viveiros, produtos, online, children }) {
         <section className="p-bloco">
           <h2>Aplicações do período</h2>
           {lista.length === 0 ? <p className="p-vazio">Nenhuma aplicação no período.</p> : (
-            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th>Produto</th><th className="n">Quantidade</th><th>Observação</th><th>Lançado por</th></tr></thead>
+            <div className="p-tabela"><table><thead><tr><th>Data</th><th>Hora</th><th>Viveiro</th><th>Produto</th><th className="n">Quantidade</th><th>Observação</th><th>Lançado por</th><th>Registrado em</th></tr></thead>
               <tbody>{lista.map((a) => <tr key={a.id}><td>{dataBR(a.data)}</td><td>{hhmm(a.hora)}</td><td><b>{cic[a.ciclo_id].codigo}</b></td><td>{prod(a.produto_id)?.nome || '—'}</td>
-                <td className="n">{fmt(N(a.quantidade), 1)} {prod(a.produto_id)?.unidade}</td><td className="e-quebra">{a.observacao}</td><td>{a.lancado_por}</td></tr>)}</tbody></table></div>
+                <td className="n">{fmt(N(a.quantidade), 1)} {prod(a.produto_id)?.unidade}</td><td className="e-quebra">{a.observacao}</td><td>{a.lancado_por}</td><td>{registrado(a.criado_em)}</td></tr>)}</tbody></table></div>
           )}
         </section>
       </>)}
     </Moldura>
+  )
+}
+
+// ======================= LOG DE ALTERAÇÕES (auditoria) =======================
+// Toda correção ou exclusão de lançamento (admin em Lançamentos; gestor em ciclos, planos, estoque, previsões, configurações)
+// fica gravada pelo banco: quem, quando, o que era e como ficou. Só leitura; gestor e admin veem.
+const NOME_TABELA = { racao: 'Trato', pesagens: 'Pesagem', bandeja_colocacoes: 'Bandejas (colocação)', bandeja_retiradas: 'Bandejas (retirada)',
+  biometrias: 'Biometria', agua: 'Água', ocorrencias: 'Ocorrência', aplicacoes_insumos: 'Insumo', planos_racao: 'Plano de ração',
+  povoamentos: 'Povoamento', despescas: 'Despesca', estoque_movimentos: 'Estoque', previsoes_despesca: 'Previsão de despesca', ciclos: 'Ciclo', configuracoes: 'Configuração' }
+const IGNORAR = new Set(['id', 'criado_em', 'criado_por', 'ciclo_id', 'colocacao_id', 'valor_prev'])
+const mostra = (v) => v == null ? '—' : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)
+export function LogAlteracoes({ viveiros, online }) {
+  const [linhas, setLinhas] = useState(null)
+  const [erro, setErro] = useState(null)
+  useEffect(() => {
+    if (MODO_DEMO || !online) return
+    supabase.from('auditoria').select('*').order('quando', { ascending: false }).limit(300)
+      .then(({ data, error }) => (error ? setErro(error.message) : setLinhas(data || [])))
+  }, [online])
+  const cod = (r) => { const cid = r.antes?.ciclo_id || r.antes?.id; return viveiros.find((v) => v.ciclo?.id === cid)?.codigo || r.antes?.codigo?.slice(0, 3) || '' }
+  const mudou = (r) => r.acao === 'apagou' ? 'registro apagado'
+    : Object.keys(r.depois || {}).filter((k) => !IGNORAR.has(k) && JSON.stringify(r.antes?.[k]) !== JSON.stringify(r.depois[k]))
+      .map((k) => `${k}: ${mostra(r.antes?.[k])} → ${mostra(r.depois[k])}`).join(' · ')
+  return (
+    <section className="p-bloco">
+      <h2>Log de alterações e exclusões</h2>
+      {MODO_DEMO && <p className="p-vazio">Disponível só no sistema real.</p>}
+      {erro && <p className="p-erro">{erro}</p>}
+      {linhas && linhas.length === 0 && <p className="p-vazio">Nenhuma correção ou exclusão registrada.</p>}
+      {linhas && linhas.length > 0 && (
+        <div className="p-tabela"><table><thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Viveiro</th><th>Data do lançamento</th><th>Mudança</th></tr></thead>
+          <tbody>{linhas.map((r) => (
+            <tr key={r.id} className={r.acao === 'apagou' ? 'atencao' : ''}>
+              <td>{registrado(r.quando)}</td><td>{r.usuario_nome || 'sistema'}</td>
+              <td>{NOME_TABELA[r.tabela] || r.tabela} · {r.acao}</td><td>{cod(r)}</td>
+              <td>{r.antes?.data ? `${dataBR(r.antes.data)} ${hhmm(r.antes.hora)}` : r.antes?.data_inicio ? dataBR(r.antes.data_inicio) : ''}</td>
+              <td className="e-quebra">{mudou(r)}{r.antes?.lancado_por ? <small className="fonte"> (lançado por {r.antes.lancado_por})</small> : null}</td>
+            </tr>))}</tbody></table></div>
+      )}
+      <p className="p-nota">Todo lançamento guarda quem lançou (usuário do login), o dia e a hora informados e quando chegou ao servidor. Correções e exclusões aparecem aqui com o antes e o depois — o registro é feito pelo banco e ninguém apaga.</p>
+    </section>
   )
 }

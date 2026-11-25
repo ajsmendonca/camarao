@@ -7,7 +7,7 @@ import {
 import Painel from './Painel'
 import Registros from './Registros'
 import Cadastros from './Cadastros'
-import { PaginaRacao, PaginaBiometria, PaginaAgua, PaginaOcorrencias, PaginaInsumos } from './Acompanhamento'
+import { PaginaRacao, PaginaBiometria, PaginaAgua, PaginaOcorrencias, PaginaInsumos, LogAlteracoes } from './Acompanhamento'
 import { Escritorio, MENU, SoOnline, PaginaCiclos, PlanoTabela, PaginaEstoque, PaginaFinanceiro, PaginaConfig } from './Escritorio'
 
 const num = (s) => {
@@ -49,7 +49,7 @@ const UNIDADES = ['kg', 'g', 'L', 'mL', 'sc', 'un']
 const fq = (n) => fmt(n, Math.abs(n - Math.round(n)) < 0.05 ? 0 : 1)
 // quantidade com unidade; pós-larva em mil PL
 const qtdProd = (p, n) => p?.categoria === 'pos_larva' ? `${mil(n)} PL` : `${fq(n)} ${p?.unidade || ''}`
-const TELA_NOME = { pesar: 'Pesar ração', cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
+const TELA_NOME = { pesar: 'Pesar ração', pesagem: 'Pesagem', cadastros: 'Clientes e fornecedores', registros: 'Histórico', equipe: 'Equipe', previsao: 'Previsão de despesca', cliente: 'Cliente', ciclo: 'Ciclos',  povoamento: 'Povoamento', despesca: 'Despesca', estoque: 'Estoque', produto: 'Produto', plano: 'Plano de ração', insumo: 'Insumo', racao: 'Ração', checagem: 'Bandejas', colocacao: 'Colocação', retirada: 'Retirada', biometria: 'Biometria', agua: 'Água', ocorrencia: 'Ocorrência' }
 
 export default function App() {
   const [cad, setCad] = useState(null)
@@ -76,9 +76,7 @@ export default function App() {
     try { localStorage.setItem('modo', m) } catch { /* sem armazenamento */ }
   }, [])
   const setPagina = useCallback((p) => { setPaginaBase(p); setSel(null); setChave((k) => k + 1); history.replaceState(null, '', '#e-' + p); window.scrollTo(0, 0) }, [])
-  const [prefill, setPrefill] = useState(null)   // tela Pesar ração → trato/bandejas já preenchidos
   const setTela = useCallback((t) => {
-    if (t !== 'racao' && t !== 'checagem') setPrefill(null)
     setTelaBase(t)
     if (location.hash) history.replaceState(null, '', location.pathname + location.search)
   }, [])
@@ -239,6 +237,12 @@ export default function App() {
           return { trato: t.trato, total: Number(t.kg), bandeja: b, lanco: Math.round((Number(t.kg) - b) * 10) / 10 }
         })
       } else r.pesagem = null
+      const pesagensHoje = [
+        ...meus.filter((l) => l.tipo === 'pesagem' && l.dados.data === hoje()).map((l) => ({ id: l.id, ...l.dados, criado_em: l.criado_em })),
+        ...(cad.pesagens || []).filter((x) => x.ciclo_id === ciclo.id && x.data === hoje() && !meus.some((l) => l.id === x.id)),
+      ].sort((a, b) => (b.hora + (b.criado_em || '')).localeCompare(a.hora + (a.criado_em || '')))
+      r.pesado = {}   // trato → pesagem mais recente de hoje
+      pesagensHoje.forEach((x) => { if (!r.pesado[x.trato]) r.pesado[x.trato] = x })
       // povoamento, despesca e população prevista
       r.povoamentos = meus.filter((l) => l.tipo === 'povoamento').map((l) => l.dados)
       r.pl = (res.pl_quantidade || 0) + novos.filter((l) => l.tipo === 'povoamento').reduce((s, l) => s + l.dados.pl_quantidade, 0)
@@ -343,7 +347,8 @@ export default function App() {
             <TelaEstoque produtos={produtos} viveiros={viveiros} gestor semSaldo onSalvar={salvar} /></PaginaEstoque>}
           {pagina === 'financeiro' && <PaginaFinanceiro cad={cad} viveiros={viveiros} produtos={produtos} online={online} onAlterado={recarregaCad} />}
           {pagina === 'lancamentos' && <SoOnline online={online}><div className="painel"><section className="p-bloco e-form e-estreito">
-            <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin} onAlterado={recarregaCad} /></section></div></SoOnline>}
+            <Registros viveiros={viveiros} produtos={produtos} online={online} podeEditar={admin} onAlterado={recarregaCad} /></section>
+            <LogAlteracoes viveiros={viveiros} online={online} /></div></SoOnline>}
           {pagina === 'cadastros' && <SoOnline online={online}><div className="painel"><section className="p-bloco e-form e-estreito">
             <Cadastros online={online} onAlterado={recarregaCad} /></section></div></SoOnline>}
           {pagina === 'configuracoes' && <PaginaConfig cad={cad} racoes={racoes} online={online} onAlterado={recarregaCad}>
@@ -362,7 +367,7 @@ export default function App() {
     <div className="app">
       <header className="topo">
         {tela !== 'inicio'
-          ? <button className="voltar" onClick={() => setTela(prefill?.volta && (tela === 'racao' || tela === 'checagem') ? prefill.volta : 'inicio')} aria-label="Voltar">‹</button>
+          ? <button className="voltar" onClick={() => setTela('inicio')} aria-label="Voltar">‹</button>
           : <span className="marca">🦐</span>}
         <div className="titulo">
           <strong>{tela === 'inicio' ? 'Coleta de campo' : tela === 'envios' ? 'Lançamentos' : TELA_NOME[tela]}</strong>
@@ -377,12 +382,9 @@ export default function App() {
       <main>
         {tela === 'inicio' && <Inicio viveiros={viveiros} irPara={setTela} tratos={cad.config.tratos_por_dia} pendentes={pendentes} gestor={gestor}
           onEscritorio={(p) => { setModo('escritorio'); setPagina(p || 'painel') }} />}
-        {tela === 'pesar' && <TelaPesar viveiros={viveiros} racoes={racoes} checagem={cad.config.checagem}
-          onLancar={(tipo, ini) => { setPrefill({ ...ini, volta: 'pesar' }); setTela(tipo) }} />}
-        {tela === 'racao' && <FormRacao inicial={prefill} viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4}
-          onSalvar={(t, d, e) => salvar(t, d, e, prefill?.volta || 'inicio')} irCheck={() => setTela('checagem')} />}
-        {tela === 'checagem' && <FormChecagem inicial={prefill} viveiros={viveiros} racoes={racoes}
-          onSalvar={(t, d, e) => salvar(t, d, e, prefill?.volta || 'inicio')} irTrato={() => setTela('racao')} />}
+        {tela === 'pesar' && <TelaPesar viveiros={viveiros} racoes={racoes} checagem={cad.config.checagem} onSalvar={salvar} />}
+        {tela === 'racao' && <FormRacao viveiros={viveiros} racoes={racoes} tratos={Number(cad.config.tratos_por_dia) || 4} onSalvar={salvar} irCheck={() => setTela('checagem')} />}
+        {tela === 'checagem' && <FormChecagem viveiros={viveiros} racoes={racoes} onSalvar={salvar} irTrato={() => setTela('racao')} />}
         {tela === 'insumo' && <FormInsumo viveiros={viveiros} insumos={insumos} onSalvar={salvar} />}
         {tela === 'estoque' && <TelaEstoque produtos={produtos} viveiros={viveiros} gestor={false} onSalvar={salvar} />}
         {tela === 'biometria' && <FormBiometria viveiros={viveiros} onSalvar={salvar} />}
@@ -400,25 +402,16 @@ export default function App() {
 }
 
 // ---------- Pesar ração: plano do dia de todos os viveiros, por trato, com a ração da checagem separada ----------
-// O OK marca como pesado (guardado só neste aparelho, por dia); depois o botão "Lançar" abre o trato/bandejas preenchidos.
-const chavePesado = () => 'pesado-' + hoje()
-const lerPesado = () => { try { return JSON.parse(localStorage.getItem(chavePesado()) || '{}') } catch { return {} } }
-function TelaPesar({ viveiros, racoes, checagem, onLancar }) {
+// Só pesagem: o funcionário confere (ou corrige) o peso e dá OK; a pesagem é gravada com quem pesou, dia e hora.
+// O trato é lançado depois na tela Ração, que já vem com o peso desta pesagem.
+function TelaPesar({ viveiros, racoes, checagem, onSalvar }) {
   const cultivo = viveiros.filter((v) => v.emCultivo)
   const nMax = Math.max(1, ...cultivo.map((v) => v.pesagem?.length || 0))
-  // trato sugerido: o primeiro que ainda tem viveiro sem trato lançado hoje
-  const sugerido = Array.from({ length: nMax }, (_, i) => i + 1).find((t) => cultivo.some((v) => v.pesagem?.some((p) => p.trato === t) && !v.tratosHoje.includes(t))) || 1
+  // trato sugerido: o primeiro que ainda tem viveiro sem pesagem hoje
+  const sugerido = Array.from({ length: nMax }, (_, i) => i + 1).find((t) => cultivo.some((v) => v.pesagem?.some((p) => p.trato === t) && !v.pesado[t])) || 1
   const [trato, setTrato] = useState(sugerido)
-  const [pesado, setPesado] = useState(lerPesado)
-  const marca = (vid, t) => setPesado((m) => {
-    const k = `${vid}-${t}`, novo = { ...m }
-    if (novo[k]) delete novo[k]; else novo[k] = agora()
-    try { localStorage.setItem(chavePesado(), JSON.stringify(novo)) } catch { /* sem armazenamento */ }
-    return novo
-  })
   const nomeR = (id) => racoes.find((p) => p.id === id)?.nome || 'ração do plano não definida'
   const linhas = cultivo.map((v) => ({ v, p: v.pesagem?.find((x) => x.trato === trato) || null }))
-  // total a separar do estoque neste trato, por ração
   const porRacao = {}
   linhas.forEach(({ v, p }) => { if (p) { const k = v.plano.produto_id || ''; porRacao[k] = (porRacao[k] || 0) + p.total } })
   const pct = Number(checagem?.pct ?? 2)
@@ -427,7 +420,7 @@ function TelaPesar({ viveiros, racoes, checagem, onLancar }) {
       <fieldset className="campo"><legend>Trato</legend>
         <div className="chips">
           {Array.from({ length: nMax }, (_, i) => i + 1).map((t) => {
-            const feitos = cultivo.filter((v) => v.tratosHoje.includes(t)).length
+            const feitos = cultivo.filter((v) => v.pesado[t]).length
             return <button key={t} type="button" className={trato === t ? 'sel' : ''} onClick={() => setTrato(t)}>{t}º{feitos ? <small> {feitos}✓</small> : null}</button>
           })}
         </div>
@@ -438,35 +431,63 @@ function TelaPesar({ viveiros, racoes, checagem, onLancar }) {
           {Object.entries(porRacao).map(([id, kg]) => <div key={id}><span>{nomeR(id)}</span><strong>{fmt(kg, 1)} kg</strong></div>)}
         </div>
       )}
-      {linhas.map(({ v, p }) => {
-        const k = `${v.id}-${trato}`
-        const lancado = v.tratosHoje.includes(trato)
-        const bandFeita = p?.bandeja > 0 && !!v.bandejaHoje
-        return (
-          <div key={v.id} className={`pesar-card ${pesado[k] ? 'pesado' : ''} ${lancado ? 'lancado' : ''}`}>
-            <div className="pesar-topo"><b>{v.codigo}</b><span>{v.plano ? <>{nomeR(v.plano.produto_id)}{v.plano.padrao && <em> · padrão</em>}</> : 'sem plano'}</span></div>
-            {!p ? <p className="dica esq">{v.plano ? `O plano tem ${v.plano.tratos?.length} tratos.` : 'Sem plano de ração: pergunte ao responsável.'}</p> : (<>
-              <div className="pesar-kg">
-                <div><span>Lanço</span><strong>{fmt(p.lanco, 1)}<em>kg</em></strong></div>
-                {p.bandeja > 0 && <div className="band"><span>Bandejas (checagem)</span><strong>{fmt(p.bandeja, 2)}<em>kg</em></strong></div>}
-              </div>
-              {p.bandeja > 0 && <small className="pesar-obs">Pese a checagem separada: {fmt(p.bandeja, 2)} kg dividido entre as bandejas. Total do trato: {fmt(p.total, 1)} kg.</small>}
-              {v.plano.observacao && !v.plano.padrao && <small className="pesar-obs recado">Recado: {v.plano.observacao}</small>}
-              <div className="pesar-acoes">
-                <button type="button" className={`ok ${pesado[k] ? 'feito' : ''}`} onClick={() => marca(v.id, trato)}>
-                  {pesado[k] ? `✓ Pesado ${pesado[k]}` : 'OK, pesado'}</button>
-                {lancado ? <span className="pesar-lancado">✓ Trato lançado</span>
-                  : <button type="button" disabled={!pesado[k]} onClick={() => onLancar('racao', { vid: v.id, trato })}>Lançar trato</button>}
-                {p.bandeja > 0 && (bandFeita ? <span className="pesar-lancado">✓ Bandejas</span>
-                  : <button type="button" disabled={!pesado[k]} onClick={() => onLancar('checagem', { vid: v.id })}>Lançar bandejas</button>)}
-              </div>
-            </>)}
-          </div>
-        )
-      })}
+      {linhas.map(({ v, p }) => <CartaoPesar key={v.id + trato} v={v} p={p} trato={trato} nomeR={nomeR} onSalvar={onSalvar} />)}
       {cultivo.length === 0 && <p className="dica">Nenhum viveiro em cultivo.</p>}
       <p className="dica">Plano do dia definido pelo escritório (kg/dia inclui as bandejas). A checagem ({fmt(pct, pct % 1 ? 1 : 0)}% da ração do dia) sai do {checagem?.trato || 1}º trato.
-        O “OK, pesado” fica marcado só neste aparelho; o trato só conta quando for lançado.</p>
+        O OK grava a pesagem (quem pesou, dia e hora). Depois lance o trato na tela Ração: o peso já vem preenchido.</p>
+    </div>
+  )
+}
+
+function CartaoPesar({ v, p, trato, nomeR, onSalvar }) {
+  const feito = v.pesado[trato]
+  const [lanco, setLanco] = useState(p ? String(p.lanco).replace('.', ',') : '')
+  const [band, setBand] = useState(p?.bandeja > 0 ? String(p.bandeja).replace('.', ',') : '')
+  const [refazer, setRefazer] = useState(false)
+  const [conf, setConf] = useState(false)
+  const kl = num(lanco), kb = p?.bandeja > 0 ? num(band) : 0
+  const valido = kl >= 0 && kl != null && !Number.isNaN(kl) && kb != null && !Number.isNaN(kb) && kb >= 0 && kl + kb > 0
+  const longe = p && valido && Math.abs(kl + kb - p.total) / p.total > 0.1
+  const lancado = v.tratosHoje.includes(trato)
+  if (!p) return (
+    <div className="pesar-card">
+      <div className="pesar-topo"><b>{v.codigo}</b><span>{v.plano ? nomeR(v.plano.produto_id) : 'sem plano'}</span></div>
+      <p className="dica esq">{v.plano ? `O plano tem ${v.plano.tratos?.length} tratos.` : 'Sem plano de ração: pergunte ao responsável.'}</p>
+    </div>
+  )
+  const gravar = () => {
+    if (longe && !conf) return setConf(true)
+    onSalvar('pesagem', { ciclo_id: v.ciclo.id, data: hoje(), hora: agora(), trato, produto_id: v.plano.produto_id || null,
+      kg_lanco: kl, kg_bandeja: kb || 0 }, null, 'pesar')
+    setRefazer(false); setConf(false)
+  }
+  return (
+    <div className={`pesar-card ${feito && !refazer ? 'pesado' : ''} ${lancado ? 'lancado' : ''}`}>
+      <div className="pesar-topo"><b>{v.codigo}</b><span>{nomeR(v.plano.produto_id)}{v.plano.padrao && <em> · padrão</em>}</span></div>
+      {feito && !refazer ? (<>
+        <div className="pesar-kg">
+          <div><span>Lanço pesado</span><strong>{fmt(feito.kg_lanco, 1)}<em>kg</em></strong></div>
+          {feito.kg_bandeja > 0 && <div className="band"><span>Bandejas pesadas</span><strong>{fmt(feito.kg_bandeja, 2)}<em>kg</em></strong></div>}
+        </div>
+        <div className="pesar-acoes">
+          <span className="pesar-lancado">✓ Pesado às {feito.hora}{feito.lancado_por ? ` por ${feito.lancado_por}` : ''}{lancado ? ' · trato lançado' : ''}</span>
+          {!lancado && <button type="button" onClick={() => setRefazer(true)}>Pesar de novo</button>}
+        </div>
+      </>) : (<>
+        <div className="pesar-kg">
+          <label><span>Lanço (plano {fmt(p.lanco, 1)})</span>
+            <input inputMode="decimal" value={lanco} onChange={(e) => { setConf(false); setLanco(e.target.value.replace(/[^\d,.]/g, '')) }} aria-label={`Lanço ${v.codigo}`} /></label>
+          {p.bandeja > 0 && <label className="band"><span>Bandejas (plano {fmt(p.bandeja, 2)})</span>
+            <input inputMode="decimal" value={band} onChange={(e) => { setConf(false); setBand(e.target.value.replace(/[^\d,.]/g, '')) }} aria-label={`Bandejas ${v.codigo}`} /></label>}
+        </div>
+        {p.bandeja > 0 && <small className="pesar-obs">Pese a checagem separada, para dividir entre as bandejas. Total do trato: {fmt(p.total, 1)} kg.</small>}
+        {v.plano.observacao && !v.plano.padrao && <small className="pesar-obs recado">Recado: {v.plano.observacao}</small>}
+        {conf && <p className="dica esq aviso-sem-plano">Peso {fmt(kl + kb, 1)} kg diferente do plano ({fmt(p.total, 1)} kg). Toque de novo para gravar mesmo assim.</p>}
+        <div className="pesar-acoes">
+          <button type="button" className="ok" disabled={!valido} onClick={gravar}>{conf ? 'Confirmar pesagem' : 'OK, pesado'}</button>
+          {refazer && <button type="button" onClick={() => setRefazer(false)}>Cancelar</button>}
+        </div>
+      </>)}
     </div>
   )
 }
@@ -682,19 +703,21 @@ function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck, ini
   const plano = v?.plano
   const tratos = plano?.tratos?.length || tratosCfg
   // previsto do lanço = trato do plano menos a ração das bandejas, quando a checagem é neste trato
-  const previsto = v?.pesagem?.find((t) => t.trato === trato)?.lanco ?? plano?.tratos?.find((t) => t.trato === trato)?.kg ?? null
+  const pesou = v?.pesado?.[trato] || null
+  const previsto = pesou ? pesou.kg_lanco : v?.pesagem?.find((t) => t.trato === trato)?.lanco ?? plano?.tratos?.find((t) => t.trato === trato)?.kg ?? null
   useEffect(() => {
     if (!v) return
     const prox = Array.from({ length: tratos }, (_, i) => i + 1).find((t) => !v.tratosHoje.includes(t))
     setTrato(inicial?.vid === vid && inicial?.trato ? inicial.trato : prox || null)
     setProduto(plano?.produto_id || v.ultimoProduto || racoes[0]?.id || null)
   }, [vid]) // eslint-disable-line
+  useEffect(() => { if (pesou?.produto_id) setProduto(pesou.produto_id) }, [vid, trato]) // eslint-disable-line
   // preenche com o previsto do trato escolhido
   useEffect(() => { if (previsto != null) setKg(String(previsto).replace('.', ',')); else setKg('') }, [vid, trato]) // eslint-disable-line
   const k = num(kg)
   const alertas = []
   if (v && trato && data === hoje() && v.tratosHoje.includes(trato)) alertas.push(`O trato ${trato} do ${v.codigo} já foi lançado hoje.`)
-  if (previsto && k > 0 && Math.abs(k - previsto) / previsto > 0.1) alertas.push(`${fmt(k)} kg é diferente do previsto pelo gestor (${fmt(previsto)} kg).`)
+  if (previsto && k > 0 && Math.abs(k - previsto) / previsto > 0.1) alertas.push(`${fmt(k)} kg é diferente do ${pesou ? 'pesado' : 'previsto pelo gestor'} (${fmt(previsto)} kg).`)
   if (plano?.produto_id && produto && produto !== plano.produto_id) alertas.push(`Ração diferente da prevista (${nomeProd(racoes, plano.produto_id)}).`)
   if (!previsto && v && k > 0 && v.racaoRecente.length >= 3) {
     const media = v.racaoRecente.reduce((s, x) => s + x, 0) / v.racaoRecente.length
@@ -724,7 +747,7 @@ function FormRacao({ viveiros, racoes, tratos: tratosCfg, onSalvar, irCheck, ini
           ))}
         </div>
       </fieldset>
-      <CampoNum rotulo={previsto != null ? `Ração a lanço (previsto ${fmt(previsto)} kg)` : 'Ração a lanço'} valor={kg} onChange={setKg} sufixo="kg" grande />
+      <CampoNum rotulo={pesou ? `Ração a lanço (pesado ${fmt(previsto)} kg às ${pesou.hora}${pesou.lancado_por ? ` por ${pesou.lancado_por}` : ''})` : previsto != null ? `Ração a lanço (previsto ${fmt(previsto)} kg)` : 'Ração a lanço'} valor={kg} onChange={setKg} sufixo="kg" grande />
       <EscolhaProduto rotulo="Ração" produtos={racoes} valor={produto} onChange={setProduto} sugerido={plano?.produto_id} />
       <CampoDataHora data={data} hora={hora} onData={setData} onHora={setHora} />
       <Salvar pronto={v && trato && produto && k > 0 && k <= 500 && hora} alertas={alertas}
@@ -754,7 +777,8 @@ function FormChecagem({ viveiros, racoes, onSalvar, irTrato, inicial }) {
   useEffect(() => {
     setManual(false); setSobra(''); setHora(agora()); setHoraCol('')
     // previsto das bandejas pela tela Pesar ração (% do kg/dia); senão, o da última colocação
-    const prev = v?.pesagem?.find((t) => t.bandeja > 0)?.bandeja
+    const pz = Object.values(v?.pesado || {}).find((x) => x.kg_bandeja > 0)
+    const prev = pz ? pz.kg_bandeja : v?.pesagem?.find((t) => t.bandeja > 0)?.bandeja
     if (prev) setColocado(String(prev).replace('.', ','))
     else if (v?.ultimaColocacao?.kg_bandejas) setColocado(String(v.ultimaColocacao.kg_bandejas).replace('.', ','))
     setProduto(v?.plano?.produto_id || v?.ultimoProduto || racoes[0]?.id || null)
@@ -1149,6 +1173,7 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
     if (l.tipo === 'despesca') return d.tipo === 'perda_total' ? `perda total · ${d.observacao}` : `${d.tipo} · ${fmt(d.biomassa_kg, 0)} kg · ${fmt(d.peso_medio_g, 1)} g`
     if (l.tipo === 'produto') return `${CAT_PRODUTO[d.categoria]} · ${d.unidade}`
     if (l.tipo === 'racao') return `${d.trato}º trato · ${fmt(d.kg)} kg · ${nomeProd(produtos, d.produto_id)}`
+    if (l.tipo === 'pesagem') return `${d.trato}º trato pesado · lanço ${fmt(d.kg_lanco)} kg${d.kg_bandeja ? ` + bandejas ${fmt(d.kg_bandeja, 2)} kg` : ''}`
     if (l.tipo === 'plano') return `${fmt(d.kg_dia)} kg/dia em ${d.tratos.length} tratos · a partir de ${dataBR(d.data_inicio)}`
     if (l.tipo === 'insumo') { const pr = produtos.find((x) => x.id === d.produto_id); return `${pr?.nome || '—'} · ${fmt(d.quantidade)} ${pr?.unidade || ''}` }
     if (l.tipo === 'colocacao') return `colocou ${fmt(d.kg_bandejas, 2)} kg nas bandejas`
@@ -1171,7 +1196,7 @@ function Envios({ lanc, viveiros, ciclos, produtos, clientes, online, onSync, on
         {lanc.length === 0 && <li className="vazio">Nenhum lançamento ainda.</li>}
         {lanc.map((l) => (
           <li key={l.id}>
-            <span className={`ic ${l.tipo}`}>{{ cliente: '👤', previsao: '📅', ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
+            <span className={`ic ${l.tipo}`}>{{ cliente: '👤', pesagem: '📋', previsao: '📅', ciclo: '🔄', povoamento: '🦐', despesca: '🧺', estoque: '📦', produto: '🏷️', plano: '📋', insumo: '🧪', racao: '🍚', colocacao: '⬇️', retirada: '⬆️', biometria: '⚖️', agua: '💧', ocorrencia: '⚠️' }[l.tipo]}</span>
             <div><b>{l.tipo === 'cliente' ? `Novo cliente · ${l.dados.nome}` : l.tipo === 'previsao' ? `${nomeViveiro(l.dados.ciclo_id)} · Previsão de despesca` : l.tipo === 'produto' ? `Novo produto · ${l.dados.nome}` : l.tipo === 'estoque' ? `Estoque · ${nomeProd(produtos, l.dados.produto_id)}` : l.tipo === 'ciclo' ? `${viveiros.find((v) => v.id === l.dados.viveiro_id)?.codigo || '?'} · Início de ciclo` : `${nomeViveiro(l.dados.ciclo_id)} · ${TELA_NOME[l.tipo]}`}</b>
               <small>{l.tipo === 'ciclo' ? resumo(l) : <>{l.dados.data ? `${dataBR(l.dados.data)}${l.dados.hora ? ` ${l.dados.hora}` : ''}` : `definido ${dataBR(l.criado_em.slice(0, 10))}`} · {resumo(l)}</>}</small></div>
             {l.sincronizado ? <em className="ok">✓</em>

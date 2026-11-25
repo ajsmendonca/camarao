@@ -178,12 +178,19 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   povoamento: data, hora, PL, laboratório, estágio, obs.; precisa de sinal); complemento é um botão separado.
 
 - **Pesar ração** (coletor, 25/11/2026; botão laranja no topo da tela inicial): plano do dia de **todos os viveiros** em cultivo,
-  por trato (chips 1º…4º; sugere o 1º trato ainda não lançado), com o total a separar por ração. Cada viveiro mostra **Lanço**
-  e **Bandejas (checagem)** em kg. Checagem = `configuracoes.checagem` {pct: % do kg/dia (padrão 2), trato: em que trato é feita
-  (padrão 1º)} — o lanço desse trato = trato do plano − bandejas (`v.pesagem` em App.jsx). Gestor/admin alteram em Configurações
-  ("Ração da checagem"). Decidido pelo Antônio: **OK marca como pesado** (só no aparelho, localStorage `pesado-<data>`) e
-  libera **"Lançar trato"/"Lançar bandejas"**, que abrem os formulários já preenchidos (viveiro, trato, kg) e voltam para a pesagem.
-  O previsto do trato (FormRacao) e a colocação das bandejas (FormChecagem) também usam esses valores.
+  por trato (chips 1º…4º; sugere o 1º trato ainda sem pesagem), com o total a separar por ração. Cada viveiro mostra **Lanço**
+  e **Bandejas (checagem)** em kg, editáveis (vêm do plano). Checagem = `configuracoes.checagem` {pct: % do kg/dia (padrão 2),
+  trato (padrão 1º)} — o lanço desse trato = trato do plano − bandejas (`v.pesagem` em App.jsx); gestor/admin alteram em
+  Configurações ("Ração da checagem"). **Decidido pelo Antônio: a tela só pesa** — o OK grava uma **pesagem** (tabela `pesagens`,
+  tipo `pesagem` na fila offline; quem pesou, dia, hora; avisa se o total diferir >10% do plano; "Pesar de novo" grava outra).
+  O lançamento é feito na tela **Ração**: ao escolher viveiro e trato, o kg vem da **pesagem mais recente de hoje** daquele trato
+  (de qualquer celular: `cad.pesagens` + aparelho → `v.pesado[trato]`), senão do plano; o rótulo diz "pesado X kg às hh:mm por Fulano".
+  Bandejas: a colocação vem com o kg pesado das bandejas.
+- **Registro de quem fez e quando (log; 25/11/2026)**: todo lançamento tem `lancado_por` (nome do login), data/hora informadas e
+  `criado_em` (chegada ao servidor); 14 tabelas ganharam `criado_por uuid default auth.uid()` (usuário do login, gravado pelo banco).
+  Correções e exclusões vão para a tabela **`auditoria`** (trigger `registra_auditoria`, security definer, em 15 tabelas: quem, quando,
+  tabela, ação alterou|apagou, antes/depois em jsonb; só gestor lê; ninguém grava direto). Escritório: listas de Acompanhamento com
+  "Registrado em", pesagens por viveiro e coluna "Pesado" nos tratos; página Lançamentos com o **Log de alterações e exclusões**.
 
 ### Lançamentos (todos com data **e hora**)
 - **Trato a lanço**: viveiro, nº do trato, ração usada (produto), kg. Vem preenchido com o previsto do plano;
