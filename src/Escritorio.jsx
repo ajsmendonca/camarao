@@ -57,7 +57,7 @@ export function Escritorio({ pagina, setPagina, usuario, online, pendentes, onEn
       <div className="esc-corpo">
         <header className="esc-topo">
           <button className="esc-menu-btn" onClick={() => setAberto((x) => !x)} aria-expanded={aberto} aria-label="Abrir menu">{aberto ? '✕' : '☰'}<small>Menu</small></button>
-          <div className="titulo"><strong>{titulo}</strong><small>{usuario}{MODO_DEMO && ' · demonstração'} · {dataBR(hoje())}</small></div>
+          <div className="titulo"><strong>{titulo}</strong><small>{usuario}{MODO_DEMO && ' · demonstração'} · versão {__VERSAO__}</small></div>
           <button className={`status ${online ? 'on' : 'off'}`} onClick={onEnvios} title="Lançamentos guardados neste aparelho">
             <span className="ponto" />{online ? 'Online' : 'Sem sinal'}
             {pendentes > 0 && <b className="badge">{pendentes}</b>}

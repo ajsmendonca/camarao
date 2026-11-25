@@ -156,6 +156,10 @@ Leia antes de mexer no código. Idioma do projeto e da interface: **português d
   skipWaiting/clientsClaim) e o app **recarrega sozinho** quando há versão nova; confere a cada 30 min e ao voltar para o app.
   Antes só atualizava na 2ª abertura — o que fez o Antônio, já como admin, ver o app antigo como se fosse "campo".
   Versão do app (data/hora do build) aparece no rodapé da tela de lançamentos.
+  **Rede de segurança (25/11/2026)**: o celular do Antônio seguia na versão antiga mesmo fechando e abrindo. Agora o build grava
+  `version.json` (plugin em vite.config.js) e `main.jsx` compara com `__VERSAO__` ao abrir e ao voltar para o app; se diferente,
+  desregistra o service worker, apaga os caches e recarrega (uma vez por versão, via sessionStorage). `vercel.json` manda
+  no-cache em `/`, `index.html`, `sw.js` e no-store em `version.json`. A versão aparece também no topo do escritório.
 - Sem `.env` → **modo demonstração** (8 viveiros de exemplo com a situação real de 24/11/2026).
 - Perfis (tabela `perfis`; decidido em 24/11/2026): **admin** (tudo do gestor + **Equipe** + **Registros** = corrigir/apagar
   lançamentos) · **gestor** (plano de ração, ciclos, despesca, previsões, estoque, painel) · **campo** (trato, bandejas,
